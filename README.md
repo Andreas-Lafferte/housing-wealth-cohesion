@@ -18,4 +18,4 @@ In the web page it is possible to see/download the paper in html and pdf formats
 
 ## Files:
 
-- [Data preparation (Draft)](andreas-lafferte.github.io/housing-wealth-cohesion/processing/01-prod-prep.html)
+- [Data preparation (Draft)](https://andreas-lafferte.github.io/housing-wealth-cohesion/processing/01-prod-prep.html)
