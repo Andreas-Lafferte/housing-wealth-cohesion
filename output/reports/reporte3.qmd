@@ -1,0 +1,2152 @@
+---
+title: "Report 3: Statistical analysis"
+date: today
+date-format: "MMMM DD, YYYY"
+format:
+  html: 
+    latex-environment: true
+    code-fold: true
+    html-math-method: katex
+    number-sections: true
+    code-link: true
+    title-block-banner: true
+    theme:
+      - pretty.scss
+  pdf: 
+    pdf-engine: xelatex
+    geometry: margin=2cm
+    template-partials: 
+      - title.tex
+    keep-tex: true
+    include-in-header:
+      text: |
+        \usepackage[noblocks]{authblk}
+        \usepackage{tabu}
+        \usepackage{booktabs}
+        \renewcommand*{\Authsep}{, }
+        \renewcommand*{\Authand}{, }
+        \renewcommand*{\Authands}{, }
+        \renewcommand\Affilfont{\small}
+    number-sections: true
+editor: source
+bibliography: "bib/tesis-magister.bib"
+csl: "bib/apa6.csl"
+author:
+  - name: Andreas Laffert Tamayo
+    orcid: 0000-0002-9008-2454
+    email: alaffertt@estudiante.uc.cl 
+    affiliations:
+      - ref: 1
+affiliations: 
+  - id: 1
+    name: Research assistant
+citeproc: true
+link-citations: true
+colorlinks: true
+fig-height: 4
+fig-width: 7.5
+editor_options: 
+  chunk_output_type: console
+---
+
+:::: {.justify}
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo=FALSE, 
+                      warning = FALSE,
+                      message = FALSE, 
+                      cache = TRUE,
+                      out.width = '80%',
+                      fig.pos= "H")
+options(scipen=999)
+options(kableExtra.auto_format = FALSE)
+options(knitr.kable.NA = '')
+options(knitr.graphics.error = FALSE)
+Sys.setlocale("LC_ALL", "ES_ES.UTF-8")
+
+
+```
+
+
+```{r}
+#| label: source1
+#| echo: false
+#| results: false
+#| message: false
+#| warning: false
+#| include: false
+
+library(here)
+library(kableExtra)
+source(here("processing/prod_analysis3.R"))
+```
+
+```{r}
+to_tr <- function(m){
+  s  <- summary(m)
+  co <- s$coefficients
+  
+  r2    <- if (is.null(s$r.squared)) NA_real_ else s$r.squared
+  adjr2 <- if (is.null(s$adj.r.squared)) NA_real_ else s$adj.r.squared
+  kcl   <- m$nclusters
+  rmse <- sqrt(m$res_var)  
+  
+  createTexreg(
+    coef.names = rownames(co),
+    coef       = co[, "Estimate"],
+    se         = co[, "Std. Error"],
+    pvalues    = co[, "Pr(>|t|)"],
+    gof.names  = c("R^2", "Adj. R^2", "RMSE", "Num. obs.", "Num. clusters"),
+    gof        = c(r2, adjr2, rmse, nobs(m), kcl),
+    gof.decimal= c(TRUE, TRUE, TRUE, FALSE, FALSE)
+  )
+}
+
+
+```
+
+
+# Presentation
+
+This report examines how housing wealth relates to a broad set of social-cohesion attitudes. We conceptualize housing wealth as the market value of the residential asset environment and proxy it using land prices (price per square meter) in the respondent’s area. The objective is to document the magnitude and direction of these associations across 15 cohesion outcomes and to assess how they change as we sequentially account for core socioeconomic correlates (education, social class, and equivalised household income).
+
+Given the panel structure of the data and relatively modest within-wave sample sizes (2,191 person-wave observations from 823 individuals across four waves: 2016 = 472; 2017 = 414; 2018 = 647; 2019 = 658), we estimate pooled OLS models with wave fixed effects and cluster-robust standard errors at the individual level. This “pooled with time effects” specification is a standard population-average approach: it estimates the regression on the stacked person-wave dataset, while wave indicators absorb common period shocks and aggregate changes over time [@angrist_mastering_2015]. Because repeated observations on the same individuals are typically serially correlated, conventional i.i.d. OLS standard errors can overstate precision; clustering at the individual level allows for arbitrary within-person dependence in the error process, yielding valid inference under weak conditions commonly used in applied work [@angrist_mastering_2015]. This approach is also well suited to an unbalanced panel (i.e., individuals not observed in every wave), which is common in survey panel data [@wooldridge_introductory_2009].
+
+The document is organized into four sequential blocks. First, we present descriptive statistics for all variables and examine how homeownership status is associated with the control variables. Second, using the pooled sample restricted to homeowners (paid-off or mortgaged; 1,391 person-wave observations from 548 individuals), we estimate a first set of pooled OLS models for each of the 15 social-cohesion outcomes, relating housing wealth—proxied by the log land price per square meter in the respondent’s residential zone—to each cohesion outcome. Third, using the same homeowner sample, we replace the continuous land-price measure with an indicator for residing in a top-decile land-price zone (decile 10 vs. all others) to capture distributional extremes. Fourth, we estimate analogous regression models on the full sample, adding an interaction between homeownership status and land price per square meter to assess whether associations between residential land values and cohesion outcomes differ between homeowners and non-homeowners. Across all three modelling blocks, specifications are estimated sequentially: beginning with the focal housing-wealth measure plus wave fixed effects and age, then adding education, then social class, and finally equivalised household income.
+
+# Descriptive statistics
+
+First, we begin by showing the descriptive statistics for the main variables per wave in @tbl-summary1.
+
+```{r}
+#| label: tbl-summary1
+#| tbl-cap: "Descriptive statistics by wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+
+conflicts_prefer(dplyr::filter)
+
+df_desc <- df_study1 %>% 
+  select(ola, 16:31, housing, uf2018, ln_uf2018, dummy_decile_uf2018,
+         educyear, isei, inc_eq_real_sqrt, decile_eq, age, -size_network_rec) %>%
+  mutate(
+    dummy_decile_uf2018 = factor(dummy_decile_uf2018, levels = c(0,1),
+                                 labels = c("Other deciles", "Decile 10")),
+    ola = factor(ola),
+    housing = factor(housing, 
+                          levels = c("Owned and fully paid-off home",
+                                     "Owned home with mortgage payments",
+                                     "Rented housing",
+                                     "Other regime")))
+
+# ---- labels / orden (mínimo) ----
+cohesion_vars <- names(df_desc %>% select(2:16))
+var_levels    <- names(df_desc %>% select(-ola))   # respeta el orden del select
+
+lab_other <- c(
+  housing = "Housing tenure",
+  uf2018 = "Housing wealth (UF, 2018)",
+  ln_uf2018 = "Housing wealth (log UF, 2018)",
+  dummy_decile_uf2018 = "Housing wealth (top decile)",
+  educyear = "Educational level",
+  isei = "ISEI",
+  inc_eq_real_sqrt = "Equivalised household income (square-root scale)",
+  decile_eq = "Income decile (equivalised)",
+  age = "Age"
+)
+
+# Overrides puntuales (agrega los que quieras)
+lab_override <- c(
+  identification    = "Cultural identification",
+  friends           = "Number of friends",
+  size_network      = "Nearby network size",
+  gen_trust         = "Generalized trust in fellow citizens",
+  trust_minorities  = "Generalized trust in minorities",
+  trust_inst        = "Trust in major institutions",
+  interest_pol      = "Political engagement",
+  satisf_demo       = "Satisfaction with democracy",
+  conv_particip     = "Conventional political participation",
+  unconv_particip   = "Unconventional political participation",
+  egalitarianism    = "Egalitarianism",
+  altruistic        = "Altruistic dispositions",
+  prosoc_behave     = "Prosocial behavior",
+  democracy_support = "Support for democracy",
+  justif_violence   = "Justification of violence"
+)
+
+lab_of <- function(v){
+  v <- as.character(v)
+  
+  out <- str_to_title(gsub("_"," ", v))
+  
+  out[v %in% names(lab_other)]    <- unname(lab_other[v[v %in% names(lab_other)]])
+  out[v %in% names(lab_override)] <- unname(lab_override[v[v %in% names(lab_override)]])
+  
+  out
+}
+
+# Orden de niveles de factores (para evitar 1,10,2,...)
+lvl_pos <- df_desc %>%
+  select(where(is.factor)) %>%
+  imap_dfr(~tibble(varname = .y, value = levels(.x), lvl_pos = seq_along(levels(.x))))
+
+# ---------- Continuas ----------
+tab_cont <- df_desc %>%
+  select(ola, where(is.numeric)) %>%
+  pivot_longer(-ola, names_to = "variable", values_to = "x") %>%
+  group_by(ola, variable) %>%
+  summarise(
+    stat = sprintf("%.2f (%.2f)", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = ola, values_from = stat) %>%
+  mutate(type = "Continuous") %>%
+  relocate(type, variable)
+
+# ---------- Categóricas ----------
+tab_cat <- df_desc %>%
+  select(ola, where(~is.factor(.x) || is.character(.x))) %>%
+  pivot_longer(-ola, names_to = "variable", values_to = "level") %>%
+  filter(!is.na(level)) %>%
+  count(ola, variable, level) %>%
+  group_by(ola, variable) %>%
+  mutate(pct = 100 * n / sum(n),
+         stat = paste0(n, " (", sprintf("%.1f", pct), "%)")) %>%
+  ungroup() %>%
+  select(ola, variable, level, stat) %>%
+  pivot_wider(names_from = ola, values_from = stat) %>%
+  mutate(
+    type = "Categorical",
+    variable = paste0(variable, ": ", level)
+  ) %>%
+  select(-level) %>%
+  relocate(type, variable)
+
+# ---------- Final (bonito + orden correcto) ----------
+tab_final <- bind_rows(tab_cont, tab_cat) %>%
+  arrange(type) %>%
+  select(-type) %>%
+  mutate(
+    varname = str_remove(variable, ":.*$"),
+    value   = if_else(str_detect(variable, ":"), str_trim(str_remove(variable, "^.*?:")), ""),
+    group   = if_else(varname %in% cohesion_vars, "Social cohesion", lab_of(varname)),
+    var     = lab_of(varname),
+    varname = factor(varname, levels = var_levels)
+  ) %>%
+  left_join(lvl_pos, by = c("varname", "value")) %>%
+  mutate(lvl_pos = if_else(is.na(lvl_pos), 0L, lvl_pos)) %>%
+  arrange(varname, lvl_pos) %>%
+  select(group, var, value, everything(), -variable, -lvl_pos)
+
+tab_final %>%
+  arrange(group, var) %>% 
+  select(-varname) %>% 
+  mutate(value = na_if(value, ""),
+         value = if_else(is.na(value), var, value),
+         var = if_else(group == "Social cohesion", group, var)) %>% 
+  select(-group) %>% 
+  mutate(var = if_else(var == value, NA, var)) %>% 
+  mutate(var = if_else(is.na(var) & !is.na(value), value, var)) %>% 
+  mutate(value = if_else(value == var, NA, value)) %>% 
+  kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Variable", "Value", "2016", "2017", "2018", "2019"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 8) %>%
+  kableExtra::collapse_rows(columns = 1, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::column_spec(2, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T) %>% 
+  kableExtra::add_footnote(
+    c("Continuous variables report mean (SD). Categorical variables report n (%)."),
+    notation = "none"
+  )
+
+
+```
+
+{{< pagebreak >}}
+
+# Inspection of homeownership 
+
+Now, we examine the homeownership variable to see its distribution across waves and its association (cross-tabulation) with the control variables entered into the models (age, education, social class, and equivalized household income).
+
+```{r}
+#| label: fig-alluvial
+#| fig-cap: "Changes in homeownership status 2016-2019"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+g1
+```
+
+```{r}
+#| label: fig-alluvial2
+#| fig-cap: "Comparation of homeownership status between 2016 and 2019"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+g2
+```
+
+```{r}
+#| label: tbl-age
+#| tbl-cap: "Age by homeownership and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+tab_age %>% 
+  mutate(range = paste0(min, "-", max),
+         `Q1-Q3` = paste0(Q0.25, "-", Q0.75)) %>% 
+  select(housing, ola, everything(), -c(trimmed, min, max, Q0.25, Q0.75, se)) %>% 
+  mutate_if(is.numeric, ~ round(.,2)) %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Homeownership status", "Wave", "N", "Mean", "SD", "Median", "Range", "Skew", "Kurtosis", "Q1-Q3"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+```{r}
+#| label: tbl-educ
+#| tbl-cap: "Years of education by homeownership and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+#
+tab_educ %>% 
+  mutate(range = paste0(min, "-", max),
+         `Q1-Q3` = paste0(Q0.25, "-", Q0.75)) %>% 
+  select(housing, ola, everything(), -c(trimmed, min, max, Q0.25, Q0.75, se)) %>% 
+  mutate_if(is.numeric, ~ round(.,2)) %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Homeownership status", "Wave", "N", "Mean", "SD", "Median", "Range", "Skew", "Kurtosis", "Q1-Q3"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+```{r}
+#| label: tbl-class
+#| tbl-cap: "Social class (ISEI) by homeownership and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+tab_class %>% 
+  mutate(across(c(mean, sd, median, min, max, Q0.25, Q0.75), ~ round(.,1))) %>% 
+  mutate(across(c(skew, kurtosis), ~ round(.,2))) %>% 
+  mutate(range = paste0(min, "-", max),
+         `Q1-Q3` = paste0(Q0.25, "-", Q0.75)) %>% 
+  select(housing, ola, everything(), -c(trimmed, min, max, Q0.25, Q0.75, se)) %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Homeownership status", "Wave", "N", "Mean", "SD", "Median", "Range", "Skew", "Kurtosis", "Q1-Q3"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 8) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+
+  
+```
+
+
+```{r}
+#| label: tbl-income
+#| tbl-cap: "Equivalised household income (square-root scale) by homeownership and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+tab_income %>% 
+  mutate(across(c(mean, sd, median, min, max, Q0.25, Q0.75), ~ round(.,0))) %>% 
+  mutate(across(c(skew, kurtosis), ~ round(.,2))) %>% 
+  mutate(range = paste0(min, "-", max),
+         `Q1-Q3` = paste0(Q0.25, "-", Q0.75)) %>% 
+  select(housing, ola, everything(), -c(trimmed, min, max, Q0.25, Q0.75, se)) %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Homeownership status", "Wave", "N", "Mean", "SD", "Median", "Range", "Skew", "Kurtosis", "Q1-Q3"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 8) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+{{< pagebreak >}}
+
+
+
+# Inspection of decile housing wealth
+
+Another important element to examine is how the wealth deciles of housing are distributed across the waves and according to the covariates included in the models (age, education, social class, equivalent household income, and homeownership). Here we present the means and standard deviations of these covariates by wave and for all waves.
+
+```{r}
+#| label: tbl-wd-age
+#| tbl-cap: "Age by decile housing wealth and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+tab_wd_age %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Decile housing wealth", "2016", "2017", "2018", "2019", "All"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+```{r}
+#| label: tbl-wd-educ
+#| tbl-cap: "Years of education by decile housing wealth and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+#
+tab_wd_educ %>% 
+  kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Decile housing wealth", "2016", "2017", "2018", "2019", "All"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+
+
+
+```{r}
+#| label: tbl-wd-class
+#| tbl-cap: "Social class (ISEI) by decile housing wealth and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+tab_wd_class %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Decile housing wealth", "2016", "2017", "2018", "2019", "All"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+```{r}
+#| label: tbl-wd-income
+#| tbl-cap: "Equivalised household income (square-root scale) by decile housing wealth and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+tab_wd_income %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Decile housing wealth", "2016", "2017", "2018", "2019", "All"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 8) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "1cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+```{r}
+#| label: tbl-wd-housing
+#| tbl-cap: "Homeownership by decile housing wealth and wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+tab_wd_housing %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                     col.names = c("Homeownership status", "Wave", paste0("D",seq(1:10))),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 8) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "2cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+
+{{< pagebreak >}}
+
+
+
+# Primary set: Social cohesion and housing-wealth extremes (top-decile land-price exposure)
+
+We then focus on the upper tail of the local housing-wealth distribution by replacing the continuous land-price proxy with an indicator for extreme housing-wealth contexts. Specifically, we define a dummy variable equal to 1 if the respondent resides in a zone whose **land price per square meter falls in the top decile (decile 10)**, and 0 otherwise. This specification is intended to capture discontinuous differences between living in the most expensive residential contexts versus the rest of the distribution—i.e., an “extremes” contrast that may be obscured by a linear specification in log prices. To align this measure with the notion of housing wealth as an owned asset, these models are estimated on the restricted panel of respondents who report owning their dwelling, either **owned and fully paid-off** or **owned with mortgage payments** (based on the homeownership item). Models are estimated using pooled OLS with wave fixed effects, age and CR2 individual-clustered standard errors, and adding education, social class, and equivalised household income sequentially.
+
+Formally, the model is:
+
+$$
+Y_{it}=\alpha+\beta_{1}\text{TopDecilePrice}_{it}+\beta{2}\text{Education}_{it}+\beta{3}\text{Class}_{it}+\beta_{4}\text{Income}_{it}+\lambda_{t}+\delta_{it}+\varepsilon_{it}
+$$ {#eq-third}
+
+where $Y_{it}$ is the social-cohesion outcome for individual $i$ in wave $t$; $\alpha$ is the intercept; $\beta_{1}$ captures the association between residing in a top-decile land-price zone (decile 10 vs. all others) and $Y_{it}$, conditional on the covariates; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of years of education, the International Socio-Economic Index of Occupational Status (ISEI), and the log equivalised household income respectively; $\lambda_{t}$ denotes wave fixed effects, $\delta_{it}$ denotes individual's age, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+Below, we present the results of the estimates using coefficient plots grouped by indicators belonging to the cultural, relational, political, and normative dimensions of social cohesion [@otero_lives_2022]. Complete tables can be found in Supplementary Material.
+
+
+## Cultural dimension
+
+```{r}
+#| label: fig-cultural
+#| fig-cap: Cultural identification by top-decile housing wealth, educational level, social class and income"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+g_cultural
+
+```
+
+
+## Relational dimension
+
+```{r}
+#| label: fig-relational
+#| fig-cap: Relational dimension of social cohesion by top-decile housing wealth, educational level, social class and income"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+g_relational
+```
+
+
+
+## Political dimension
+
+```{r}
+#| label: fig-political
+#| fig-cap: Political dimension of social cohesion by top-decile housing wealth, educational level, social class and income"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+g_political
+```
+
+
+
+## Normative dimension
+
+```{r}
+#| label: fig-normative
+#| fig-cap: Normative dimension of social cohesion by top-decile housing wealth, educational level, social class and income"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+g_normative
+```
+
+
+# Interactions 1: Social cohesion and housing-wealth extremes (top-top 10 decileland-price exposure) by homeownership
+
+We next examine whether the association between residing in the top housing-wealth decile (decile 10) of the respondent’s residential zone and social-cohesion outcomes varies by homeownership status. To do so, we estimate models on a restricted panel that includes only respondents who are homeowners, distinguishing between those who own their dwelling outright and those who are still making mortgage payments. 
+
+Formally, the model is:
+
+$$
+\begin{aligned}
+Y_{it} &=
+\sum_{g=1}^{4}\alpha_g\,H_{git}
+\;+\;
+\sum_{g=1}^{4}\beta_g\Big(\text{Top top 10 decile Price}_{it}\times H_{git}\Big)
+\;+\;
+\gamma_1\,\text{Education}_{it}
+\;+\;
+\gamma_2\,\text{Class}_{it}
+\;+\;
+\gamma_3\,\text{Income}_{it} \\
+&\quad + \delta\,\text{Age}_{it}
+\;+\;
+\lambda_t
+\;+\;
+\varepsilon_{it}
+\end{aligned}
+$$ {#eq-for}
+
+where $H_{git}$ is a dummy indicating whether individual $i$ in wave $t$ belongs to homeownership category $g \in \{1,2,3,4\}$. The coefficients $\beta_g$ represent the top-top 10 decile housing wealth (top 10 decile 10 vs. all others) gradient within each homeownership category (i.e., group-specific slopes), and there is no global $\beta_1$ term for $\text{Top top 10 decile Price}_{it}$ outside these interactions; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of years of education, the International Socio-Economic Index of Occupational Status (ISEI), and the log equivalised household income respectively; and $\beta_{6}$ captures the interaction between top-top 10 decile housing wealth and homeownership status, indicating whether the top-top 10 decile housing wealth effect differs across ownership groups. $\lambda_{t}$ denotes wave fixed effects, $\delta_{it}$ denotes individual's age, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+Below, we present the results of the estimates using plots of predicted values grouped by indicators belonging to the cultural, relational, political, and normative dimensions of social cohesion. Complete tables can be found in Supplementary Material.
+
+## Cultural dimension
+
+```{r}
+#| fig-cap: "Cultural identification by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$identification
+
+```
+
+
+## Relational dimension
+
+```{r}
+#| fig-cap: "Number of friends by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$friends
+```
+
+```{r}
+#| fig-cap: "Network size by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$size_network
+```
+
+```{r}
+#| fig-cap: "Generalized trust by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$gen_trust
+```
+
+```{r}
+#| fig-cap: "Trust in minorities by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$trust_minorities
+```
+
+```{r}
+#| fig-cap: "Trust in major institutions by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$trust_inst
+```
+
+
+## Political dimension
+
+```{r}
+#| fig-cap: "Political engagement by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$interest_pol
+```
+
+```{r}
+#| fig-cap: "Satisfaction with democracy by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$satisf_demo
+```
+
+```{r}
+#| fig-cap: "Conventional political participation by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$conv_particip
+```
+
+
+```{r}
+#| fig-cap: "Unconventional political participation by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$unconv_particip
+```
+
+
+```{r}
+#| fig-cap: "Egalitarianism by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$egalitarianism
+```
+
+
+```{r}
+#| fig-cap: "Altruistic dispositions by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$altruistic
+```
+
+
+```{r}
+#| fig-cap: "Prosocial behavior by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$prosoc_behave
+```
+
+## Normative dimension
+
+```{r}
+#| fig-cap: "Democracy support by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$democracy_support
+```
+
+```{r}
+#| fig-cap: "Justification of violence by top 10 decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$justif_violence
+```
+
+# Interactions 2: Social cohesion and housing-wealth by homeownership
+
+We also examine whether the association between housing wealth—proxied by the log land price per square meter in the respondent’s residential zone—and social-cohesion outcomes varies by homeownership status. As in the previous set of interaction models, the analysis is conducted on a restricted panel that includes only homeowners, distinguishing between outright owners and those with mortgage payments.
+
+Formally, the model is:
+
+$$
+\begin{aligned}
+Y_{it} &=
+\sum_{g=1}^{4}\alpha_g\,H_{git}
+\;+\;
+\sum_{g=1}^{4}\beta_g\Big(\text{Log price}_{it}\times H_{git}\Big)
+\;+\;
+\gamma_1\,\text{Education}_{it}
+\;+\;
+\gamma_2\,\text{Class}_{it}
+\;+\;
+\gamma_3\,\text{Income}_{it} \\
+&\quad + \delta\,\text{Age}_{it}
+\;+\;
+\lambda_t
+\;+\;
+\varepsilon_{it}
+\end{aligned}
+$$ {#eq-for}
+
+where $H_{git}$ is a dummy indicating whether individual $i$ in wave $t$ belongs to homeownership category $g \in \{1,2,3,4\}$. The coefficients $\beta_g$ represent the land-price gradient within each homeownership category (i.e., group-specific slopes), and there is no global $\beta_1$ term for $\text{Log price}_{it}$ outside these interactions; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of years of education, the International Socio-Economic Index of Occupational Status (ISEI), and the log equivalised household income respectively; and $\beta_{6}$ captures the interaction between log land price per $m^2$ and homeownership status, indicating whether the land-price gradient differs across ownership groups. $\lambda_{t}$ denotes wave fixed effects, $\delta_{it}$ denotes individual's age, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+Below, we present the results of the estimates using plots of predicted values grouped by indicators belonging to the cultural, relational, political, and normative dimensions of social cohesion. Complete tables can be found in Supplementary Material.
+
+## Cultural dimension
+
+```{r}
+#| fig-cap: "Cultural identification by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$identification
+
+```
+
+
+## Relational dimension
+
+```{r}
+#| fig-cap: "Number of friends by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$friends
+```
+
+```{r}
+#| fig-cap: "Network size by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$size_network
+```
+
+```{r}
+#| fig-cap: "Generalized trust by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$gen_trust
+```
+
+```{r}
+#| fig-cap: "Trust in minorities by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$trust_minorities
+```
+
+```{r}
+#| fig-cap: "Trust in major institutions by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$trust_inst
+```
+
+
+## Political dimension
+
+```{r}
+#| fig-cap: "Political engagement by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$interest_pol
+```
+
+```{r}
+#| fig-cap: "Satisfaction with democracy by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$satisf_demo
+```
+
+```{r}
+#| fig-cap: "Conventional political participation by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$conv_particip
+```
+
+
+```{r}
+#| fig-cap: "Unconventional political participation by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$unconv_particip
+```
+
+
+```{r}
+#| fig-cap: "Egalitarianism by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$egalitarianism
+```
+
+
+```{r}
+#| fig-cap: "Altruistic dispositions by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$altruistic
+```
+
+
+```{r}
+#| fig-cap: "Prosocial behavior by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$prosoc_behave
+```
+
+## Normative dimension
+
+```{r}
+#| fig-cap: "Democracy support by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$democracy_support
+```
+
+```{r}
+#| fig-cap: "Justification of violence by housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m5$justif_violence
+```
+
+# Summary of findings
+
+The main specification is summarized below. Marked cells indicate cases in which the housing-wealth coefficient—the top-decile (decile 10) dummy—is statistically significant at the 95% confidence level.  All models include wave fixed effects, and standard errors are computed using CR2 corrections clustered at the individual level. Let $Y$ denote a measure of social cohesion; $W$ housing wealth; $A$ the respondent’s age; $E$ years of education; $C$ social class; and $I$ household income. These specifications correspond to Models 1 through 5 in the preceding tables (reported separately for each dependent variable).
+
+
+## Social cohesion and housing-wealth extremes (top-decileland-price exposure)
+
+```{r}
+#| tbl-cap: "Significance of top-decileland-price across model specifications"
+#| tbl-cap-location: top
+#| results: asis
+
+sum2 <- readxl::read_xlsx(here("input/summary1.xlsx"), sheet = 2) 
+
+sum2 %>% 
+  select(-W) %>% 
+  mutate(`Y` = str_remove(`Y`, ",")) %>% 
+   kableExtra::kable(format = "html", 
+                    booktabs= T,
+                    align = 'c',
+                     col.names = c("Y", "W+A", "W+A+E", "W+A+E+C", "W+A+E+C+I"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 8) %>%
+  kableExtra::row_spec(0, bold = T)
+
+```
+
+
+
+# References
+
+::: {#refs}
+:::
+::::
+
+
+# Supplementary material
+
+## Primary set: Social cohesion and housing-wealth extremes (top-decile land-price exposure)
+
+### Cultural identification
+
+```{r}
+#| tbl-cap: "Cultural identification by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+ccoef <- list(
+  "(Intercept)" = "Intercept",
+  "dummy_decile_uf2018" = "Top 10 decile housing wealth",
+  ola2017 = "Wave 2017",
+  ola2018 = "Wave 2018",
+  ola2019 = "Wave 2019",
+  age = "Age (in years)",
+  educyear = "Education (in years)",
+  isei = "ISEI",
+  ln_inc_eq_real_sqrt = "Log equivalised household income (square-root scale)"
+)
+
+texreg::texreg(lapply(models_principal$identification, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Number of friends
+
+```{r}
+#| tbl-cap: "Number of friends by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$friends, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Network size
+
+```{r}
+#| tbl-cap: "Network size by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$size_network, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Generalized trust
+
+
+```{r}
+#| tbl-cap: "Generalized trust by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$gen_trust, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+### Trust in minorities
+
+```{r}
+#| tbl-cap: "Trust in minorities by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$trust_minorities, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Trust in major institutions
+
+
+```{r}
+#| tbl-cap: "Political trust by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$trust_inst, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+### Political engagement
+
+```{r}
+#| tbl-cap: "Political engagement by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$interest_pol, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Satisfaction with democracy
+
+```{r}
+#| tbl-cap: "Satisfaction with democracy by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$satisf_demo, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Conventional political participation
+
+```{r}
+#| tbl-cap: "Conventional political participation by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$conv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Unconventional political participation
+
+```{r}
+#| tbl-cap: "Unconventional political participation by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$unconv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Egalitarianism
+
+```{r}
+#| tbl-cap: "Egalitarianism by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$egalitarianism, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Altruistic dispositions
+
+```{r}
+#| tbl-cap: "Altruistic dispositions by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$altruistic, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Prosocial behavior
+
+```{r}
+#| tbl-cap: "Prosocial behavior by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$prosoc_behave, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Support for democracy
+
+```{r}
+#| tbl-cap: "Support for democracy by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_principal$democracy_support, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Justification of violence
+
+```{r}
+#| tbl-cap: "Justification of violence by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_principal$justif_violence, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+
+
+
+
+## Interactions 1: Social cohesion and housing-wealth extremes (top-decile land-price exposure) by homeownership
+
+### Cultural identification
+
+```{r}
+#| tbl-cap: "Cultural identification by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+ccoef <- list(
+  "housingOwned home with mortgage payments" = "Owned home with mortgage payments",
+"dummy_decile_uf2018" = "Top 10 decile housing wealth",
+ola2017 = "Wave 2017",
+  ola2018 = "Wave 2018",
+  ola2019 = "Wave 2019",
+  age = "Age (in years)",
+    "housingOwned home with mortgage payments:dummy_decile_uf2018" = "Owned home with mortgage payments x Top 10 decile housing wealth",
+  educyear = "Education (in years)",
+  isei = "ISEI",
+  ln_inc_eq_real_sqrt = "Log equivalised household income (square-root scale)"
+)
+
+texreg::texreg(lapply(models_int_dummy10$identification$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Number of friends
+
+```{r}
+#| tbl-cap: "Number of friends by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$friends$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Network size
+
+```{r}
+#| tbl-cap: "Network size by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_dummy10$size_network$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+            custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Generalized trust
+
+
+```{r}
+#| tbl-cap: "Generalized trust by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_dummy10$gen_trust$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+              
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+### Trust in minorities
+
+```{r}
+#| tbl-cap: "Trust in minorities by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_dummy10$trust_minorities$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Trust in major institutions
+
+
+```{r}
+#| tbl-cap: "Political trust by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$trust_inst$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+### Political engagement
+
+```{r}
+#| tbl-cap: "Political engagement by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$interest_pol$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                 
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Satisfaction with democracy
+
+```{r}
+#| tbl-cap: "Satisfaction with democracy by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$satisf_demo$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                  custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Conventional political participation
+
+```{r}
+#| tbl-cap: "Conventional political participation by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$conv_particip$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                  custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Unconventional political participation
+
+```{r}
+#| tbl-cap: "Unconventional political participation by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$unconv_particip$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                 
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Egalitarianism
+
+```{r}
+#| tbl-cap: "Egalitarianism by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$egalitarianism$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                     custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Altruistic dispositions
+
+```{r}
+#| tbl-cap: "Altruistic dispositions by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_dummy10$altruistic$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                 custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Prosocial behavior
+
+```{r}
+#| tbl-cap: "Prosocial behavior by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_dummy10$prosoc_behave$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Support for democracy
+
+```{r}
+#| tbl-cap: "Support for democracy by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_dummy10$democracy_support$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Justification of violence
+
+```{r}
+#| tbl-cap: "Justification of violence by top-decile housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_dummy10$justif_violence$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                  custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+
+
+
+
+
+## Interactions 2: Social cohesion and housing-wealth by homeownership
+
+### Cultural identification
+
+```{r}
+#| tbl-cap: "Cultural identification by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+ccoef <- list(
+  "housingOwned home with mortgage payments" = "Owned home with mortgage payments",
+"ln_uf2018" = "Log land price m^2",
+ola2017 = "Wave 2017",
+  ola2018 = "Wave 2018",
+  ola2019 = "Wave 2019",
+  age = "Age (in years)",
+    "housingOwned home with mortgage payments:ln_uf2018" = "Owned home with mortgage payments x Log land price m^2",
+  educyear = "Education (in years)",
+  isei = "ISEI",
+  ln_inc_eq_real_sqrt = "Log equivalised household income (square-root scale)"
+)
+
+texreg::texreg(lapply(models_int_lnprice$identification$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Number of friends
+
+```{r}
+#| tbl-cap: "Number of friends by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$friends$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Network size
+
+```{r}
+#| tbl-cap: "Network size by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_lnprice$size_network$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+            custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Generalized trust
+
+
+```{r}
+#| tbl-cap: "Generalized trust by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_lnprice$gen_trust$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+### Trust in minorities
+
+```{r}
+#| tbl-cap: "Trust in minorities by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$trust_minorities$models, to_tr),
+               custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Trust in major institutions
+
+
+```{r}
+#| tbl-cap: "Political trust by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_lnprice$trust_inst$models, to_tr),
+               custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+### Political engagement
+
+```{r}
+#| tbl-cap: "Political engagement by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$interest_pol$models, to_tr),
+              custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Satisfaction with democracy
+
+```{r}
+#| tbl-cap: "Satisfaction with democracy by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$satisf_demo$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                  custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Conventional political participation
+
+```{r}
+#| tbl-cap: "Conventional political participation by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$conv_particip$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                  custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Unconventional political participation
+
+```{r}
+#| tbl-cap: "Unconventional political participation by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$unconv_particip$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Egalitarianism
+
+```{r}
+#| tbl-cap: "Egalitarianism by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$egalitarianism$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                     custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Altruistic dispositions
+
+```{r}
+#| tbl-cap: "Altruistic dispositions by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_lnprice$altruistic$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                 custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Prosocial behavior
+
+```{r}
+#| tbl-cap: "Prosocial behavior by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_lnprice$prosoc_behave$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Support for democracy
+
+```{r}
+#| tbl-cap: "Support for democracy by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models_int_lnprice$democracy_support$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+### Justification of violence
+
+```{r}
+#| tbl-cap: "Justification of violence by land price housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models_int_lnprice$justif_violence$models, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:5))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+                  custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+
+

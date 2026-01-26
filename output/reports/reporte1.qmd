@@ -1,0 +1,1708 @@
+---
+title: "Report 1: Initial results of regression models"
+date: today
+date-format: "MMMM DD, YYYY"
+format:
+  html: 
+    latex-environment: true
+    code-fold: true
+    html-math-method: katex
+    number-sections: true
+    code-link: true
+    title-block-banner: true
+    theme:
+      - pretty.scss
+  pdf: 
+    pdf-engine: xelatex
+    geometry: margin=2cm
+    template-partials: 
+      - title.tex
+    keep-tex: true
+    include-in-header:
+      text: |
+        \usepackage[noblocks]{authblk}
+        \renewcommand*{\Authsep}{, }
+        \renewcommand*{\Authand}{, }
+        \renewcommand*{\Authands}{, }
+        \renewcommand\Affilfont{\small}
+    number-sections: true
+editor: source
+bibliography: "bib/tesis-magister.bib"
+csl: "bib/apa6.csl"
+author:
+  - name: Andreas Laffert Tamayo
+    orcid: 0000-0002-9008-2454
+    email: alaffertt@estudiante.uc.cl 
+    affiliations:
+      - ref: 1
+affiliations: 
+  - id: 1
+    name: Research assistant
+citeproc: true
+link-citations: true
+colorlinks: true
+fig-height: 4
+fig-width: 7.5
+editor_options: 
+  chunk_output_type: console
+---
+
+:::: {.justify}
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo=FALSE, 
+                      warning = FALSE,
+                      message = FALSE, 
+                      cache = TRUE,
+                      out.width = '85%',
+                      fig.pos= "H")
+options(scipen=999)
+options(kableExtra.auto_format = FALSE)
+options(knitr.kable.NA = '')
+options(knitr.graphics.error = FALSE)
+Sys.setlocale("LC_ALL", "ES_ES.UTF-8")
+
+table_format <- if (knitr::is_html_output()) {
+   #conditional instructions for kable
+   "html" #if html set "html" in format
+ } else if (knitr::is_latex_output()) {
+   "latex"#if latex set "latex" in format
+ }
+
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+
+```
+
+
+```{r}
+#| label: source1
+#| echo: false
+#| results: false
+#| message: false
+#| warning: false
+#| include: false
+
+library(here)
+library(kableExtra)
+source(here("processing/prod_analysis.R"))
+```
+
+```{r}
+to_tr <- function(m){
+  s  <- summary(m)
+  co <- s$coefficients
+  
+  r2    <- if (is.null(s$r.squared)) NA_real_ else s$r.squared
+  adjr2 <- if (is.null(s$adj.r.squared)) NA_real_ else s$adj.r.squared
+  kcl   <- m$nclusters
+  rmse <- sqrt(m$res_var)  
+  
+  createTexreg(
+    coef.names = rownames(co),
+    coef       = co[, "Estimate"],
+    se         = co[, "Std. Error"],
+    pvalues    = co[, "Pr(>|t|)"],
+    gof.names  = c("R^2", "Adj. R^2", "Num. obs.", "RMSE", "Num. clusters"),
+    gof        = c(r2, adjr2, nobs(m), rmse, kcl),
+    gof.decimal= c(TRUE, TRUE, FALSE, TRUE, FALSE)
+  )
+}
+
+
+```
+
+
+
+# Presentation
+
+This report examines how housing wealth relates to a broad set of social-cohesion attitudes. We treat housing wealth as a construct captured through two complementary proxies: (i) homeownership status (owning vs. not owning), and (ii) the market value of the residential asset environment, proxied by land prices (price per square meter) in the respondent’s area. The objective is to document the magnitude and direction of these associations across 15 cohesion outcomes, and to assess how they evolve as we sequentially account for core socioeconomic correlates (education, social class, and equivalised household income).
+
+Given the panel structure of the data and relatively small within-wave sample sizes (2,393 person-wave observations drawn from 905 individuals across four waves: 2016 = 537; 2017 = 448; 2018 = 706; 2019 = 702), we estimate pooled OLS models with wave fixed effects and cluster standard errors at the individual level. This “pooled with time effects” specification is a standard population-average approach: it estimates the regression on the stacked person-wave dataset, while wave indicators absorb common period shocks and overall changes across waves [@angrist_mastering_2015]. Because repeated outcomes for the same unit are typically serially correlated, conventional i.i.d. OLS standard errors can overstate precision; clustering on the individual explicitly allows arbitrary within-person dependence in the error process, yielding valid inference under weak conditions commonly used in applied work [@angrist_mastering_2015]. This approach is also compatible with the unbalanced nature of the panel (some individuals are not observed in every wave), which is common in survey panels [@wooldridge_introductory_2009].
+
+The document is structured in four sequential blocks.  First, descriptive statistics are presented. Second, using the full pooled sample, we estimate a first set of pooled OLS models for each of the 15 social-cohesion outcomes with homeownership as the main predictor. Third, we restrict the dataset to homeowners (paid-off or paying; 1,572 person-wave observations from 624 individuals) and estimate the association between housing wealth—proxied by the (log) land price per square meter in the respondent’s residential zone—and each cohesion outcome. Four, using the same homeowner sample, we replace the continuous land-price measure with an indicator for living in a top-decile land-price zone (decil 10 vs. all others) to capture distributional extremes. Across all three blocks, models are estimated sequentially: starting with the focal housing variable plus wave fixed effects, then adding education, then social class, and finally equivalised household income decile.
+
+# Descriptive statistics
+
+First, we begin by showing the descriptive statistics for the main variables per wave in @tbl-summary1.
+
+```{r}
+#| label: tbl-summary1
+#| tbl-cap: "Descriptive statistics by wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+ 
+df_desc <- df_study1 %>% 
+  select(ola, 18:33, housing, uf2018, ln_uf2018, dummy_decile_uf2018,
+         cine, class, decile_eq, sex, age_t, -size_network_rec) %>%
+  mutate(
+    dummy_decile_uf2018 = factor(dummy_decile_uf2018, levels = c(0,1),
+                                 labels = c("Other deciles", "Decile 10")),
+    ola = factor(ola),
+    housing = factor(housing, 
+                          levels = c("Owned and fully paid-off home",
+                                     "Owned home with mortgage payments",
+                                     "Rented housing",
+                                     "Other regime")))
+
+# ---- labels / orden (mínimo) ----
+cohesion_vars <- names(df_desc %>% select(2:16))
+var_levels    <- names(df_desc %>% select(-ola))   # respeta el orden del select
+
+lab_other <- c(
+  housing = "Housing tenure",
+  uf2018 = "Housing wealth (UF, 2018)",
+  ln_uf2018 = "Housing wealth (log UF, 2018)",
+  dummy_decile_uf2018 = "Housing wealth (top decile)",
+  cine = "Educational level",
+  class = "Social class",
+  decile_eq = "Income decile (equivalised)",
+  sex = "Sex",
+  age_t = "Age group"
+)
+
+# Overrides puntuales (agrega los que quieras)
+lab_override <- c(
+  identification    = "Cultural identification",
+  friends           = "Number of friends",
+  size_network      = "Nearby network size",
+  gen_trust         = "Generalized trust in fellow citizens",
+  trust_minorities  = "Generalized trust in minorities",
+  trust_inst        = "Trust in major institutions",
+  interest_pol      = "Political engagement",
+  satisf_demo       = "Satisfaction with democracy",
+  conv_particip     = "Conventional political participation",
+  unconv_particip   = "Unconventional political participation",
+  egalitarianism    = "Egalitarianism",
+  altruistic        = "Altruistic dispositions",
+  prosoc_behave     = "Prosocial behavior",
+  democracy_support = "Support for democracy",
+  justif_violence   = "Justification of violence"
+)
+
+lab_of <- function(v){
+  v <- as.character(v)
+  
+  out <- str_to_title(gsub("_"," ", v))
+  
+  out[v %in% names(lab_other)]    <- unname(lab_other[v[v %in% names(lab_other)]])
+  out[v %in% names(lab_override)] <- unname(lab_override[v[v %in% names(lab_override)]])
+  
+  out
+}
+
+# Orden de niveles de factores (para evitar 1,10,2,...)
+lvl_pos <- df_desc %>%
+  select(where(is.factor)) %>%
+  imap_dfr(~tibble(varname = .y, value = levels(.x), lvl_pos = seq_along(levels(.x))))
+
+# ---------- Continuas ----------
+tab_cont <- df_desc %>%
+  select(ola, where(is.numeric)) %>%
+  pivot_longer(-ola, names_to = "variable", values_to = "x") %>%
+  group_by(ola, variable) %>%
+  summarise(
+    stat = sprintf("%.2f (%.2f)", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(names_from = ola, values_from = stat) %>%
+  mutate(type = "Continuous") %>%
+  relocate(type, variable)
+
+# ---------- Categóricas ----------
+tab_cat <- df_desc %>%
+  select(ola, where(~is.factor(.x) || is.character(.x))) %>%
+  pivot_longer(-ola, names_to = "variable", values_to = "level") %>%
+  filter(!is.na(level)) %>%
+  count(ola, variable, level) %>%
+  group_by(ola, variable) %>%
+  mutate(pct = 100 * n / sum(n),
+         stat = paste0(n, " (", sprintf("%.1f", pct), "%)")) %>%
+  ungroup() %>%
+  select(ola, variable, level, stat) %>%
+  pivot_wider(names_from = ola, values_from = stat) %>%
+  mutate(
+    type = "Categorical",
+    variable = paste0(variable, ": ", level)
+  ) %>%
+  select(-level) %>%
+  relocate(type, variable)
+
+# ---------- Final (bonito + orden correcto) ----------
+tab_final <- bind_rows(tab_cont, tab_cat) %>%
+  arrange(type) %>%
+  select(-type) %>%
+  mutate(
+    varname = str_remove(variable, ":.*$"),
+    value   = if_else(str_detect(variable, ":"), str_trim(str_remove(variable, "^.*?:")), ""),
+    group   = if_else(varname %in% cohesion_vars, "Social cohesion", lab_of(varname)),
+    var     = lab_of(varname),
+    varname = factor(varname, levels = var_levels)
+  ) %>%
+  left_join(lvl_pos, by = c("varname", "value")) %>%
+  mutate(lvl_pos = if_else(is.na(lvl_pos), 0L, lvl_pos)) %>%
+  arrange(varname, lvl_pos) %>%
+  select(group, var, value, everything(), -variable, -lvl_pos)
+
+tab_final %>%
+  arrange(group, var) %>% 
+  select(-varname) %>% 
+  mutate(value = na_if(value, ""),
+         value = if_else(is.na(value), var, value),
+         var = if_else(group == "Social cohesion", group, var)) %>% 
+  select(-group) %>% 
+  mutate(var = if_else(var == value, NA, var)) %>% 
+  kableExtra::kable(format = table_format, 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Variable", "Value", "2016", "2017", "2018", "2019"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 1, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T) %>% 
+  kableExtra::add_footnote(
+    c("Continuous variables report mean (SD). Categorical variables report n (%)."),
+    notation = "none"
+  )
+
+
+```
+
+
+# First set: Social cohesion and homeownership
+
+We next examine the association between homeownership and multiple social cohesion outcomes. These models use the full unbalanced panel (all available observations across waves).
+
+Formally, the model is:
+$$
+Y_{it}=\alpha+\beta_{1}\text{Homeownership}_{it}+\beta{2}\text{Education}_{it}+\beta{3}\text{Class}_{it}+\beta{4}\text{IncomeDecile}_{it}+\lambda_{t}+\varepsilon_{it}
+$$ {#eq-final}
+
+where $Y_{it}$ is the social-cohesion outcome for individual $i$ in wave $t$; $\alpha$ is the intercept; $\beta_{1}$ captures the association between homeownership and $Y_{it}$ conditional on the covariates; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of educational attainment, social class, and equivalised household income decile with $Y_{it}$, respectively; $\lambda_{t}$ denotes wave fixed effects, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+## Cultural identification
+
+```{r}
+#| tbl-cap: "Cultural identification by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+ccoef <- list(
+  "(Intercept)" = "Intercept",
+  "housingOwned and fully paid-off home" = "Owned and fully paid-off home",
+  "housingOwned home with mortgage payments" = "Owned home with mortgage payments",
+  "housingRented housing" = "Rented housing",
+  ola2017 = "Wave 2017",
+  ola2018 = "Wave 2018",
+  ola2019 = "Wave 2019",
+  cineSecondary = "Secondary",
+  cineTechnical = "Technical",
+  "cineUniversity or more" = "University or more",
+  "classLower-grade service class" = "Lower-grade service class",
+  "classSmall business owners" = "Small business owners",
+  "classSkilled workers" = "Skilled workers",
+  "classUnskilled workers" = "Unskilled workers",
+  "classRetired" = "Retired", 
+  "classUnemployed" = "Unemployed",
+  "classOther (NILF)" = "Other (NILF)",
+  decile_eq2 = "D2",
+  decile_eq3 = "D3",
+  decile_eq4 = "D4",
+  decile_eq5 = "D5",
+  decile_eq6 = "D6",
+  decile_eq7 = "D7",
+  decile_eq8 = "D8",
+  decile_eq9 = "D9",
+  decile_eq10 = "D10"
+)
+
+texreg::texreg(lapply(models1$identification, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Number of friends
+
+```{r}
+#| tbl-cap: "Number of friends by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$friends, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Network size
+
+```{r}
+#| tbl-cap: "Network size by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$size_network, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Generalized trust
+
+
+```{r}
+#| tbl-cap: "Generalized trust by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$gen_trust, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+## Trust in minorities
+
+```{r}
+#| tbl-cap: "Trust in minorities by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$trust_minorities, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Trust in major institutions
+
+
+```{r}
+#| tbl-cap: "Political trust by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$trust_inst, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+## Political engagement
+
+```{r}
+#| tbl-cap: "Political engagement by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$interest_pol, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Satisfaction with democracy
+
+```{r}
+#| tbl-cap: "Satisfaction with democracy by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$satisf_demo, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Conventional political participation
+
+```{r}
+#| tbl-cap: "Conventional political participation by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$conv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Unconventional political participation
+
+```{r}
+#| tbl-cap: "Unconventional political participation by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$unconv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Egalitarianism
+
+```{r}
+#| tbl-cap: "Egalitarianism by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$egalitarianism, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Altruistic dispositions
+
+```{r}
+#| tbl-cap: "Altruistic dispositions by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$altruistic, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Prosocial behavior
+
+```{r}
+#| tbl-cap: "Prosocial behavior by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$prosoc_behave, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Support for democracy
+
+```{r}
+#| tbl-cap: "Support for democracy by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$democracy_support, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Justification of violence
+
+```{r}
+#| tbl-cap: "Justification of violence by homeownership, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models1$justif_violence, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Homeownership (Ref. = Other regime)" = 2:4,
+                             "Wave (Ref. = 2016)" = 5:7,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 8:10,
+                             "Social class (Ref. = High grase service)" = 11:17,
+                             "Equivalised income decile (square-root scale)" = 18:26
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+# Second set: Social cohesion and housing wealth
+
+We next examine whether housing wealth—proxied by the log land price per square meter in the respondent’s residential zone—relates to multiple social-cohesion outcomes. To align this measure with the notion of housing wealth as an owned asset, these models are estimated on the restricted panel of respondents who report owning their dwelling, either **owned and fully paid-off** or **owned with mortgage payments** (based on the homeownership item). The estimation strategy mirrors the first set: we use pooled OLS with wave fixed effects and individual-clustered CR2 standard errors, and we build specifications sequentially by adding education, social class, and equivalised household income decile.
+
+Formally, the model is:
+
+$$
+Y_{it}=\alpha+\beta_{1}\text{log price}_{it}+\beta{2}\text{Education}_{it}+\beta{3}\text{Class}_{it}+\beta{4}\text{IncomeDecile}_{it}+\lambda_{t}+\varepsilon_{it}
+$$ {#eq-second}
+
+where $Y_{it}$ is the social-cohesion outcome for individual $i$ in wave $t$; $\alpha$ is the intercept; $\beta_{1}$ captures the association between log land price $m^2$ and $Y_{it}$, conditional on the covariates; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of educational attainment, social class, and equivalised household income decile with $Y_{it}$, respectively; $\lambda_{t}$ denotes wave fixed effects, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+
+
+## Cultural identification
+
+```{r}
+#| tbl-cap: "Cultural identification by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+ccoef <- list(
+  "(Intercept)" = "Intercept",
+  "ln_uf2018" = "Log land price m^2",
+  ola2017 = "Wave 2017",
+  ola2018 = "Wave 2018",
+  ola2019 = "Wave 2019",
+  cineSecondary = "Secondary",
+  cineTechnical = "Technical",
+  "cineUniversity or more" = "University or more",
+  "classLower-grade service class" = "Lower-grade service class",
+  "classSmall business owners" = "Small business owners",
+  "classSkilled workers" = "Skilled workers",
+  "classUnskilled workers" = "Unskilled workers",
+  "classRetired" = "Retired", 
+  "classUnemployed" = "Unemployed",
+  "classOther (NILF)" = "Other (NILF)",
+  decile_eq2 = "D2",
+  decile_eq3 = "D3",
+  decile_eq4 = "D4",
+  decile_eq5 = "D5",
+  decile_eq6 = "D6",
+  decile_eq7 = "D7",
+  decile_eq8 = "D8",
+  decile_eq9 = "D9",
+  decile_eq10 = "D10"
+)
+
+texreg::texreg(lapply(models2$identification, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Number of friends
+
+```{r}
+#| tbl-cap: "Number of friends by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$friends, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Network size
+
+```{r}
+#| tbl-cap: "Network size by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$size_network, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Generalized trust
+
+
+```{r}
+#| tbl-cap: "Generalized trust by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$gen_trust, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+## Trust in minorities
+
+```{r}
+#| tbl-cap: "Trust in minorities by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$trust_minorities, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Trust in major institutions
+
+
+```{r}
+#| tbl-cap: "Political trust by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$trust_inst, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+## Political engagement
+
+```{r}
+#| tbl-cap: "Political engagement by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$interest_pol, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Satisfaction with democracy
+
+```{r}
+#| tbl-cap: "Satisfaction with democracy by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$satisf_demo, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Conventional political participation
+
+```{r}
+#| tbl-cap: "Conventional political participation by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$conv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Unconventional political participation
+
+```{r}
+#| tbl-cap: "Unconventional political participation by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$unconv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Egalitarianism
+
+```{r}
+#| tbl-cap: "Egalitarianism by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$egalitarianism, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Altruistic dispositions
+
+```{r}
+#| tbl-cap: "Altruistic dispositions by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$altruistic, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Prosocial behavior
+
+```{r}
+#| tbl-cap: "Prosocial behavior by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$prosoc_behave, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Support for democracy
+
+```{r}
+#| tbl-cap: "Support for democracy by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models2$democracy_support, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Justification of violence
+
+```{r}
+#| tbl-cap: "Justification of violence by housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models2$justif_violence, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+# Third set: Social cohesion and housing-wealth extremes (top-decile land-price exposure)
+
+We then focus on the upper tail of the local housing-wealth distribution by replacing the continuous land-price proxy with an indicator for extreme housing-wealth contexts. Specifically, we define a dummy variable equal to 1 if the respondent resides in a zone whose **land price per square meter falls in the top decile (decile 10)**, and 0 otherwise. This specification is intended to capture discontinuous differences between living in the most expensive residential contexts versus the rest of the distribution—i.e., an “extremes” contrast that may be obscured by a linear specification in log prices. As in the second set, models are estimated on the restricted panel of homeowners (fully paid-off or paying a mortgage), using pooled OLS with wave fixed effects and CR2 individual-clustered standard errors, and adding education, social class, and equivalised household income decile sequentially.
+
+Formally, the model is:
+
+$$
+Y_{it}=\alpha+\beta_{1}\text{TopDecilePrice}_{it}+\beta{2}\text{Education}_{it}+\beta{3}\text{Class}_{it}+\beta_{4}\text{IncomeDecile}_{it}+\lambda_{t}+\varepsilon_{it}
+$$ {#eq-third}
+
+where $Y_{it}$ is the social-cohesion outcome for individual $i$ in wave $t$; $\alpha$ is the intercept; $\beta_{1}$ captures the association between residing in a top-decile land-price zone (decile 10 vs. all others) and $Y_{it}$, conditional on the covariates; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of educational attainment, social class, and equivalised household income decile with $Y_{it}$, respectively; $\lambda_{t}$ denotes wave fixed effects, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+
+
+## Cultural identification
+
+```{r}
+#| tbl-cap: "Cultural identification by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+ccoef <- list(
+  "(Intercept)" = "Intercept",
+  "dummy_decile_uf2018" = "Top 10 decile housing wealth",
+  ola2017 = "Wave 2017",
+  ola2018 = "Wave 2018",
+  ola2019 = "Wave 2019",
+  cineSecondary = "Secondary",
+  cineTechnical = "Technical",
+  "cineUniversity or more" = "University or more",
+  "classLower-grade service class" = "Lower-grade service class",
+  "classSmall business owners" = "Small business owners",
+  "classSkilled workers" = "Skilled workers",
+  "classUnskilled workers" = "Unskilled workers",
+  "classRetired" = "Retired", 
+  "classUnemployed" = "Unemployed",
+  "classOther (NILF)" = "Other (NILF)",
+  decile_eq2 = "D2",
+  decile_eq3 = "D3",
+  decile_eq4 = "D4",
+  decile_eq5 = "D5",
+  decile_eq6 = "D6",
+  decile_eq7 = "D7",
+  decile_eq8 = "D8",
+  decile_eq9 = "D9",
+  decile_eq10 = "D10"
+)
+
+texreg::texreg(lapply(models3$identification, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Number of friends
+
+```{r}
+#| tbl-cap: "Number of friends by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$friends, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Network size
+
+```{r}
+#| tbl-cap: "Network size by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$size_network, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Generalized trust
+
+
+```{r}
+#| tbl-cap: "Generalized trust by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$gen_trust, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+## Trust in minorities
+
+```{r}
+#| tbl-cap: "Trust in minorities by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$trust_minorities, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Trust in major institutions
+
+
+```{r}
+#| tbl-cap: "Political trust by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$trust_inst, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+## Political engagement
+
+```{r}
+#| tbl-cap: "Political engagement by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$interest_pol, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Satisfaction with democracy
+
+```{r}
+#| tbl-cap: "Satisfaction with democracy by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$satisf_demo, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Conventional political participation
+
+```{r}
+#| tbl-cap: "Conventional political participation by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$conv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Unconventional political participation
+
+```{r}
+#| tbl-cap: "Unconventional political participation by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$unconv_particip, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Egalitarianism
+
+```{r}
+#| tbl-cap: "Egalitarianism by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$egalitarianism, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Altruistic dispositions
+
+```{r}
+#| tbl-cap: "Altruistic dispositions by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$altruistic, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Prosocial behavior
+
+```{r}
+#| tbl-cap: "Prosocial behavior by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$prosoc_behave, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Support for democracy
+
+```{r}
+#| tbl-cap: "Support for democracy by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+texreg::texreg(lapply(models3$democracy_support, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+
+## Justification of violence
+
+```{r}
+#| tbl-cap: "Justification of violence by top-decile housing wealth, educational level, social class and income"
+#| tbl-cap-location: top
+#| results: asis
+
+
+texreg::texreg(lapply(models3$justif_violence, to_tr),
+                  custom.model.names = c(paste0("Model ", seq(1:4))),
+               caption.above = NULL,
+               caption = NULL,
+               custom.coef.map = ccoef,
+               digits = 2,
+               groups = list("Wave (Ref. = 2016)" = 3:5,
+                             "Educational level (CINE) (Ref. = Primary or less)" = 6:8,
+                             "Social class (Ref. = High grase service)" = 9:15,
+                             "Equivalised income decile (square-root scale)" = 16:24
+                               ),
+               custom.note = "Note: Cells contain regression coefficients with standard errors in parentheses. %stars.",
+               leading.zero = T,
+               use.packages = F,
+               booktabs = F,
+               scalebox = 0.75,
+               center = T,
+               float.pos = "H")
+```
+
+# References
+
+::: {#refs}
+:::
+::::
+
+
+
