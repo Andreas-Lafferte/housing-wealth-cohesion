@@ -5,6 +5,7 @@
 #******************************************************************************************************************************************************
 
 
+
 # 4.1 Create dependent variables of social cohesion --------------------------------------------------------------------------------------------------------------------------
 
 db_long <- db_long %>%
@@ -96,7 +97,6 @@ frq(db_long$housing)
 
 # Housing value m2
 frq(db_long$uf2018)
-frq(db_long$decile_uf2018)
 
 db_long$ln_uf2018 <- log(db_long$uf2018)# Create log
 
@@ -110,10 +110,19 @@ db_long <- db_long %>%
 
 frq(db_long$area_sd_uf)
 
+
+frq(db_long$decile_uf2018)
+frq(db_long$quintile_uf2018)
+
 ## Dummy for decil 10
 db_long$dummy_decile_uf2018 <- if_else(db_long$decile_uf2018 == 10, 1, 0)
 
 frq(db_long$dummy_decile_uf2018)
+
+## Dummy for quintile 5
+db_long$dummy_quintile_uf2018 <- if_else(db_long$quintile_uf2018 == 5, 1, 0)
+
+frq(db_long$dummy_quintile_uf2018)
 
 # 4.3 Sex --------------------------------------------------------------------------------------------------------------------------
 
@@ -549,7 +558,65 @@ db_long <- db_long %>%
   mutate(isei = if_else(is.na(isei), isei_sost, isei)) %>% 
   ungroup()
 
-# 4.10 Labels  -------------------------------------------------------------
+# 4.9 Winsorisation of income -------------------------------------------------------
+
+db_long %>%
+  group_by(ola) %>%
+  summarise(
+    n = sum(!is.na(inc_eq_real_sqrt)),
+    mean = mean(inc_eq_real_sqrt, na.rm = TRUE),
+    median = median(inc_eq_real_sqrt, na.rm = TRUE),
+    p95 = quantile(inc_eq_real_sqrt, .95, na.rm = TRUE),
+    p995 = quantile(inc_eq_real_sqrt, .99, na.rm = TRUE),
+    p999 = quantile(inc_eq_real_sqrt, .999, na.rm = TRUE),
+    max = max(inc_eq_real_sqrt, na.rm = TRUE)
+  ) %>%
+  arrange(ola) 
+
+db_long %>%
+  dplyr::filter(ola == 2016, !is.na(inc_eq_real_sqrt)) %>%
+  arrange(desc(inc_eq_real_sqrt)) %>%
+  select(idencuesta, ola, inc_eq_real_sqrt) %>%
+  slice_head(n = 30)
+
+tmp_2016 <- db_long %>% filter(ola == 2016, !is.na(inc_eq_real_sqrt))
+
+p995_2016  <- quantile(tmp_2016$inc_eq_real_sqrt, .995,  na.rm = TRUE)
+
+tmp_2016 %>% summarise(
+  n = n(),
+  n_gt_p995  = sum(inc_eq_real_sqrt > p995_2016))
+
+# in 2016 3 cases above 995 percentile, 2 cases with values typed incorrectly
+
+cap_2016 <- db_long %>%
+  filter(ola == 2016, !is.na(inc_eq_real_sqrt)) %>%
+  summarise(cap = sort(inc_eq_real_sqrt, decreasing = TRUE)[3]) %>%
+  pull(cap)
+
+db_long <- db_long %>%
+  mutate(
+    inc_eq_real_sqrt = if_else(
+      ola == 2016 & !is.na(inc_eq_real_sqrt) & inc_eq_real_sqrt > cap_2016,
+      cap_2016,
+      inc_eq_real_sqrt
+    )
+  )
+
+db_long %>%
+  group_by(ola) %>%
+  summarise(
+    n = sum(!is.na(inc_eq_real_sqrt)),
+    mean = mean(inc_eq_real_sqrt, na.rm = TRUE),
+    median = median(inc_eq_real_sqrt, na.rm = TRUE),
+    p95 = quantile(inc_eq_real_sqrt, .95, na.rm = TRUE),
+    p995 = quantile(inc_eq_real_sqrt, .995, na.rm = TRUE),
+    p999 = quantile(inc_eq_real_sqrt, .999, na.rm = TRUE),
+    max = max(inc_eq_real_sqrt, na.rm = TRUE)
+  ) %>%
+  arrange(ola) 
+
+# 4.11 Labels  -------------------------------------------------------------
 
 db_long$idencuesta <- sjlabelled::set_label(db_long$idencuesta, label = "ID subject")
 db_long$ola <- sjlabelled::set_label(db_long$ola, label = "Wave")
@@ -567,7 +634,9 @@ db_long$housing <- sjlabelled::set_label(db_long$housing, label = "Housing owner
 db_long$uf2018 <- sjlabelled::set_label(db_long$uf2018, label = "Price per m2 of land")
 db_long$ln_uf2018 <- sjlabelled::set_label(db_long$ln_uf2018, label = "Log price per m2 of land")
 db_long$decile_uf2018 <- sjlabelled::set_label(db_long$decile_uf2018, label = "Decile price per m2 of land")
+db_long$quintile_uf2018 <- sjlabelled::set_label(db_long$quintile_uf2018, label = "Quintile price per m2 of land")
 db_long$dummy_decile_uf2018 <- sjlabelled::set_label(db_long$dummy_decile_uf2018, label = "Decile 10 in land price")
+db_long$dummy_quintile_uf2018 <- sjlabelled::set_label(db_long$dummy_quintile_uf2018, label = "Quintile 5 in land price")
 db_long$area_sd_uf <- sjlabelled::set_label(db_long$area_sd_uf, label = "SD of price per m2 of land")
 
 db_long$identification <- sjlabelled::set_label(db_long$identification, label = "Cultural identification")
@@ -601,13 +670,13 @@ db_long$educ_dic <- sjlabelled::set_label(db_long$educ_dic, label = "Universitar
 db_long$educyear <- sjlabelled::set_label(db_long$educyear, label = "Education in years")
 db_long$isei <- sjlabelled::set_label(db_long$isei, label = "ISEI")
 
-# 4.11 Drop variables ------------------------------------------------------------------------------------------------------------------------------------------
+# 4.12 Drop variables ------------------------------------------------------------------------------------------------------------------------------------------
 db_long <- db_long %>% 
   select(
     idencuesta, ola, segmento, estrato, ponderador_long_total, 
     comuna, comuna_cod, region_cod, geocodigo, manzana_elsoc,
     housing, 
-    uf2018, ln_uf2018, decile_uf2018, dummy_decile_uf2018,
+    uf2018, ln_uf2018, decile_uf2018, dummy_decile_uf2018, quintile_uf2018, dummy_quintile_uf2018,
     identification:justif_violence,
     inc_eq_real_sqrt, ln_inc_eq_real_sqrt, decile_eq, decile_eq1,
     isei, sex, age, educyear)

@@ -1,0 +1,913 @@
+---
+title: "Report 4: Statistical analysis"
+date: today
+date-format: "MMMM DD, YYYY"
+format:
+  html: 
+    latex-environment: true
+    code-fold: true
+    html-math-method: katex
+    number-sections: true
+    code-link: true
+    title-block-banner: true
+    theme:
+      - pretty.scss
+  pdf: 
+    pdf-engine: xelatex
+    geometry: margin=2cm
+    template-partials: 
+      - title.tex
+    keep-tex: true
+    include-in-header:
+      text: |
+        \usepackage[noblocks]{authblk}
+        \usepackage{tabu}
+        \usepackage{multirow}
+        \usepackage{booktabs}
+        \usepackage{pdflscape}
+        \renewcommand*{\Authsep}{, }
+        \renewcommand*{\Authand}{, }
+        \renewcommand*{\Authands}{, }
+        \renewcommand\Affilfont{\small}
+    number-sections: true
+editor: source
+bibliography: "bib/tesis-magister.bib"
+csl: "bib/apa6.csl"
+author:
+  - name: Andreas Laffert Tamayo
+    orcid: 0000-0002-9008-2454
+    email: alaffertt@estudiante.uc.cl 
+    affiliations:
+      - ref: 1
+affiliations: 
+  - id: 1
+    name: Research assistant
+citeproc: true
+link-citations: true
+colorlinks: true
+fig-height: 4
+fig-width: 7.5
+editor_options: 
+  chunk_output_type: console
+---
+
+:::: {.justify}
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo=FALSE, 
+                      warning = FALSE,
+                      message = FALSE, 
+                      cache = TRUE,
+                      out.width = '80%',
+                      fig.pos= "H")
+options(scipen=999)
+options(kableExtra.auto_format = FALSE)
+options(knitr.kable.NA = '')
+options(knitr.graphics.error = FALSE)
+Sys.setlocale("LC_ALL", "ES_ES.UTF-8")
+
+
+```
+
+
+```{r}
+#| label: source1
+#| echo: false
+#| results: false
+#| message: false
+#| warning: false
+#| include: false
+
+library(here)
+library(kableExtra)
+library(ggdist)
+source(here("processing/prod_analysis4.R"))
+
+```
+
+```{r}
+to_tr <- function(m){
+  s  <- summary(m)
+  co <- s$coefficients
+  
+  r2    <- if (is.null(s$r.squared)) NA_real_ else s$r.squared
+  adjr2 <- if (is.null(s$adj.r.squared)) NA_real_ else s$adj.r.squared
+  kcl   <- m$nclusters
+  rmse <- sqrt(m$res_var)  
+  
+  createTexreg(
+    coef.names = rownames(co),
+    coef       = co[, "Estimate"],
+    se         = co[, "Std. Error"],
+    pvalues    = co[, "Pr(>|t|)"],
+    gof.names  = c("R^2", "Adj. R^2", "RMSE", "Num. obs.", "Num. clusters"),
+    gof        = c(r2, adjr2, rmse, nobs(m), kcl),
+    gof.decimal= c(TRUE, TRUE, TRUE, FALSE, FALSE)
+  )
+}
+
+
+```
+
+
+# Presentation
+
+This report examines how housing wealth relates to a broad set of social-cohesion attitudes. We conceptualize housing wealth as the market value of the residential asset environment and proxy it using land prices (price per square meter) in the respondent’s area. The objective is to document the magnitude and direction of these associations across 15 cohesion outcomes and to assess how they change as we sequentially account for core socioeconomic correlates (education, social class, and equivalised household income).
+
+Given the panel structure of the data and relatively modest within-wave sample sizes (2,188 person-wave observations from 821 individuals across four waves: 2016 = 472; 2017 = 414; 2018 = 646; 2019 = 656), we estimate pooled OLS models with wave fixed effects and cluster-robust standard errors at the individual level. This “pooled with time effects” specification is a standard population-average approach: it estimates the regression on the stacked person-wave dataset, while wave indicators absorb common period shocks and aggregate changes over time [@angrist_mastering_2015]. Because repeated observations on the same individuals are typically serially correlated, conventional i.i.d. OLS standard errors can overstate precision; clustering at the individual level allows for arbitrary within-person dependence in the error process, yielding valid inference under weak conditions commonly used in applied work [@angrist_mastering_2015]. This approach is also well suited to an unbalanced panel (i.e., individuals not observed in every wave), which is common in survey panel data [@wooldridge_introductory_2009].
+
+The document is organized into five sequential blocks. First, we present descriptive statistics for all variables used in the analysis. Second, we document how the housing-wealth measure (defined as an indicator for residing in the top quintile of land price per square meter in the respondent’s residential zone) relates to the core covariates included in the models—age, education, social class, and equivalised household income—and we describe its distribution across communes. Third, using the pooled sample restricted to homeowners (fully paid-off or mortgaged; 1,391 person-wave observations from 548 individuals), we estimate pooled OLS models for each of the 15 social-cohesion outcomes, relating the housing-wealth indicator to each outcome. Fourth, we implement a decomposition strategy that quantifies how much of the unconditional (total) association between housing wealth and social cohesion is accounted for by education, class, and income, leveraging the recursive structure that links wealth (W) to each socioeconomic dimension (E, C, I) and, in turn, to the cohesion outcome (Y). We report this decomposition both for baseline specifications (without wave fixed effects and age) and for an alternative version based on residualized outcomes after accounting for wave fixed effects and age. Finally, we estimate interaction models between housing wealth and homeownership status to assess whether the association varies across tenure categories and to explore plausible channels underlying the main results. Across all modelling blocks, specifications are estimated sequentially, starting with the focal housing-wealth measure plus wave fixed effects and age, and then adding education, social class, and equivalised household income in turn.
+
+# Descriptive statistics
+
+First, we begin by showing the descriptive statistics for the main variables per wave in @tbl-summary1.
+
+```{r}
+#| label: tbl-summary1
+#| tbl-cap: "Descriptive statistics by wave"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+conflicts_prefer(dplyr::filter)
+
+df_desc <- df_study1 %>% 
+  select(18:33, uf2018, ln_uf2018, dummy_decile_uf2018, dummy_quintile_uf2018, 
+         educyear, isei, inc_eq_real_sqrt, decile_eq, age, housing, -size_network_rec) %>%
+  mutate(
+    dummy_decile_uf2018 = factor(dummy_decile_uf2018, levels = c(0,1),
+                                 labels = c("Other deciles", "Decile 10")),
+    dummy_quintile_uf2018 = factor(dummy_quintile_uf2018, levels = c(0,1),
+                                 labels = c("Other quintiles", "Top 20%")),
+    housing = factor(housing, 
+                          levels = c("Owned and fully paid-off home",
+                                     "Owned home with mortgage payments",
+                                     "Rented housing",
+                                     "Other regime")))
+
+# ---- labels / orden (mínimo) ----
+cohesion_vars <- names(df_desc %>% select(1:15))
+var_levels    <- names(df_desc)   # respeta el orden del select
+
+lab_other <- c(
+  housing = "Housing tenure",
+  uf2018 = "Housing wealth (UF, 2018)",
+  ln_uf2018 = "Housing wealth (log UF, 2018)",
+  dummy_quintile_uf2018 = "Housing wealth (top 20%)",
+  dummy_decile_uf2018 = "Housing wealth (top decile)",
+  educyear = "Educational level",
+  isei = "ISEI",
+  inc_eq_real_sqrt = "Equivalised household income (square-root scale)",
+  decile_eq = "Income decile (equivalised)",
+  age = "Age"
+)
+
+# Overrides puntuales (agrega los que quieras)
+lab_override <- c(
+  identification    = "Cultural identification",
+  friends           = "Number of friends",
+  size_network      = "Nearby network size",
+  gen_trust         = "Generalized trust in fellow citizens",
+  trust_minorities  = "Generalized trust in minorities",
+  trust_inst        = "Trust in major institutions",
+  interest_pol      = "Political engagement",
+  satisf_demo       = "Satisfaction with democracy",
+  conv_particip     = "Conventional political participation",
+  unconv_particip   = "Unconventional political participation",
+  egalitarianism    = "Egalitarianism",
+  altruistic        = "Altruistic dispositions",
+  prosoc_behave     = "Prosocial behavior",
+  democracy_support = "Support for democracy",
+  justif_violence   = "Justification of violence"
+)
+
+lab_of <- function(v){
+  v <- as.character(v)
+  out <- str_to_title(gsub("_"," ", v))
+  out[v %in% names(lab_other)]    <- unname(lab_other[v[v %in% names(lab_other)]])
+  out[v %in% names(lab_override)] <- unname(lab_override[v[v %in% names(lab_override)]])
+  out
+}
+
+# Orden de niveles de factores (para evitar orden raro dentro de cada var)
+lvl_pos <- df_desc %>%
+  select(where(is.factor)) %>%
+  imap_dfr(~tibble(varname = .y, value = levels(.x), lvl_pos = seq_along(levels(.x))))
+
+# --- 2) Continuas (overall) ----
+tab_cont <- df_desc %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "x") %>%
+  summarise(
+    variable = unique(variable),
+    stat = sprintf("%.2f (%.2f)", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE)),
+    .by = variable
+  ) %>%
+  mutate(type = "Continuous") %>%
+  relocate(type, variable)
+
+# --- 3) Categóricas (overall) ----
+tab_cat <- df_desc %>%
+  select(where(~is.factor(.x) || is.character(.x))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "level") %>%
+  filter(!is.na(level)) %>%
+  count(variable, level, name = "n") %>%
+  group_by(variable) %>%
+  mutate(pct = 100 * n / sum(n),
+         stat = paste0(n, " (", sprintf("%.1f", pct), "%)")) %>%
+  ungroup() %>%
+  mutate(
+    type = "Categorical",
+    variable = paste0(variable, ": ", level)
+  ) %>%
+  select(type, variable, stat)
+
+# --- 4) Final (bonito + orden correcto) ----
+tab_final <- bind_rows(tab_cont, tab_cat) %>%
+  mutate(
+    varname = str_remove(variable, ":.*$"),
+    value   = if_else(str_detect(variable, ":"), str_trim(str_remove(variable, "^.*?:")), ""),
+    group   = if_else(varname %in% cohesion_vars, "Social cohesion", lab_of(varname)),
+    var     = lab_of(varname),
+    varname = factor(varname, levels = var_levels)
+  ) %>%
+  left_join(lvl_pos, by = c("varname", "value")) %>%
+  mutate(lvl_pos = if_else(is.na(lvl_pos), 0L, lvl_pos)) %>%
+  arrange(varname, lvl_pos) %>%
+  select(group, var, value, stat, varname, -lvl_pos)
+
+tab_kable <- tab_final %>%
+  arrange(group, var) %>%
+  select(-varname) %>%
+  mutate(
+    value = na_if(value, ""),
+    value = if_else(is.na(value), var, value),
+    var   = if_else(group == "Social cohesion", group, var)
+  ) %>%
+  select(-group) %>%
+  mutate(var = if_else(var == value, NA, var)) %>%
+  mutate(var = if_else(is.na(var) & !is.na(value), value, var)) %>%
+  mutate(value = if_else(value == var, NA, value))
+
+tab_kable %>%
+  kableExtra::kable(
+    format = "latex",
+    booktabs = TRUE,
+    align = "c",
+    col.names = c("Variable", "Value", "Overall"),
+    caption = NULL
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = "hold_position",
+    bootstrap_options = "striped",
+    full_width = TRUE,
+    font_size = 8
+  ) %>%
+  kableExtra::collapse_rows(columns = 1, valign = "top", latex_hline = "major") %>%
+  kableExtra::column_spec(1, width = "3cm") %>%
+  kableExtra::column_spec(2, width = "3cm") %>%
+  kableExtra::add_footnote(
+    c("Continuous variables report mean (SD). Categorical variables report n (%)."),
+    notation = "none"
+  )
+```
+
+{{< pagebreak >}}
+
+
+# Housing wealth quintile and covariates
+
+Another important element to examine is how the wealth quintiles of housing are distributed according to the covariates included in the models (age, education, social class, equivalent household income, and home ownership) and among municipalities. Below we present the means and standard deviations of these covariates, and the frequencies and proportions in the case of home ownership and municipalities.
+
+
+```{r}
+#| label: fig-general
+#| fig-cap: Homeownership by quintile housing wealth
+#| fig-cap-location: top
+#| echo: false
+#| out-width: '60%'
+
+knitr::include_graphics(here('output/reports/sjtab.png'))
+```
+
+
+
+
+
+```{r}
+#| label: tbl-wd-comuna
+#| tbl-cap: "Homeownership by quintile housing wealth"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+df_study1 %>% 
+  count(comuna, dummy_quintile_uf2018, name = "n") %>% 
+  group_by(comuna) %>% 
+  mutate(prop = n / sum(n)) %>% 
+  pivot_wider(id_cols = comuna,
+              names_from = dummy_quintile_uf2018,
+              values_from = c(n,prop),
+              values_fill = 0) %>%
+    mutate(prop_0 = scales::percent(prop_0),
+           prop_1 = scales::percent(prop_1)) %>% 
+  arrange(-n_1) %>% 
+  kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Comune", "N (bottom 80%)", "N (top 20%)", "% (bottom 80%)", "% (top 20%)"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+```{r}
+#| label: tbl-wd-age
+#| tbl-cap: "Quintile housing wealth by age, education, social class and household income"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+left_join(
+tab_wd_age %>% 
+  select(f_quintile_uf2018, ends_with("All"))
+,
+tab_wd_educ %>% 
+  select(f_quintile_uf2018, ends_with("All"))) %>% 
+  
+
+left_join(.
+          ,
+tab_wd_class %>% 
+  select(f_quintile_uf2018, ends_with("All"))
+) %>% 
+  left_join(.
+            ,
+tab_wd_income %>% 
+  select(f_quintile_uf2018, ends_with("All"))
+) %>% 
+   kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Quintile housing wealth", "Age", "Education", "ISEI", "Equivalised household income"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = F, font_size = 9) %>%
+  kableExtra::collapse_rows(columns = 2, valign = "top", latex_hline = "major") %>% 
+  kableExtra::column_spec(1, width = "3cm") %>% 
+  kableExtra::row_spec(0, bold = T)
+  
+```
+
+{{< pagebreak >}}
+
+
+
+# Primary set: Social cohesion and housing-wealth extremes (top-quintile land-price exposure)
+
+We then focus on the upper tail of the local housing-wealth distribution by using an indicator of exposure to extreme housing-wealth contexts. Specifically, we construct a dummy variable equal to 1 if the respondent resides in a zone where land price per square meter falls in the top quintile (top 20%), and 0 otherwise. This specification is designed to capture potentially discontinuous differences between living in the most expensive residential contexts and living elsewhere in the distribution—an “extremes” contrast that may be missed by a linear specification in log prices. To align this measure with housing wealth as an owned asset, we estimate these models on a restricted panel of respondents who report owning their dwelling, either fully paid-off or with an outstanding mortgage (based on the homeownership item). Models are estimated using pooled OLS with wave fixed effects and age, CR2 individual-clustered standard errors, and sequential adjustment for education, social class, and equivalised household income.
+
+
+Formally, the model is:
+
+$$
+Y_{it}=\alpha+\beta_{1}\text{TopQuintilePrice}_{it}+\beta{2}\text{Education}_{it}+\beta{3}\text{Class}_{it}+\beta_{4}\text{Income}_{it}+\lambda_{t}+\delta_{it}+\varepsilon_{it}
+$$ {#eq-third}
+
+where $Y_{it}$ is the social-cohesion outcome for individual $i$ in wave $t$; $\alpha$ is the intercept; $\beta_{1}$ captures the association between residing in a top-quintile land-price zone (top 20% vs. all others) and $Y_{it}$, conditional on the covariates; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of years of education, the International Socio-Economic Index of Occupational Status (ISEI), and the log equivalised household income respectively; $\lambda_{t}$ denotes wave fixed effects, $\delta_{it}$ denotes individual's age, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+Below, we present the results of the estimates using coefficient plots grouped by indicators belonging to the cultural, relational, political, and normative dimensions of social cohesion [@otero_lives_2022]. Complete tables can be found in Supplementary Material.
+
+
+## Cultural dimension
+
+```{r}
+#| label: fig-cultural
+#| fig-cap: Cultural identification by top-quintile housing wealth, educational level, social class and income
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+#| out-width: '90%'
+g_cultural_quintile
+
+```
+
+
+## Relational dimension
+
+```{r}
+#| label: fig-relational
+#| fig-cap: Relational dimension of social cohesion by top-quintile housing wealth, educational level, social class and income
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+#| out-width: '90%'
+#| fig-asp: 0.8
+g_relational_quintile
+```
+
+
+
+## Political dimension
+
+```{r}
+#| label: fig-political
+#| fig-cap: Political dimension of social cohesion by top-quintile housing wealth, educational level, social class and income
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+#| out-width: '90%'
+#| fig-asp: 0.8
+
+g_political_quintile
+```
+
+
+
+## Normative dimension
+
+```{r}
+#| label: fig-normative
+#| fig-cap: Normative dimension of social cohesion by top-quintile housing wealth, educational level, social class and income
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+#| out-width: '90%'
+g_normative_quintile
+```
+
+{{< pagebreak >}}
+
+# Decomposition
+
+## Baseline decomposition
+
+The baseline decomposition partitions the total association between housing wealth and each social-cohesion outcome into a residual (direct) component and three mediated components, following the linear system presented in the Social cohesion and housing wealth in Chile document. Let $Y$ denote a measure of social cohesion and $W$ housing wealth. The total association is obtained from the unconditional model:
+
+$$
+Y = \alpha_0 + \beta_0 W + u_0 
+$$
+
+where $\beta_0$ captures the overall (unconditional) association between $W$ and $Y$. A second model introduces socioeconomic mediators—education $E$, social class $C$ (ISEI), and household income $I$:
+
+$$
+Y = \alpha_1 + \beta_1 W + \gamma_1 E + \theta_1 C + \delta_1 I + u_1 
+$$
+
+In this specification, $\beta_1$ represents the residual association between $W$ and $Y$ net of $E$, $C$, and $I$, while $\gamma_1$, $\theta_1$, and $\delta_1$ are the conditional associations of each mediator with $Y$. To quantify mediated pathways, each mediator is regressed on $W$ in separate first-stage equations:
+
+$$
+\begin{aligned}
+E &= \alpha_E + \gamma_2 W + u_E \\
+C &= \alpha_C + \theta_2 W + u_C \\
+I &= \alpha_I + \delta_2 W + u_I
+\end{aligned}
+$$
+
+Under the linear decomposition, the total association $\beta_0$ can be expressed as the sum of the residual component and the three indirect components:
+
+$$
+\beta_0 = \beta_1 + (\gamma_1\gamma_2) + (\theta_1\theta_2) + (\delta_1\delta_2)
+$$
+
+Accordingly, the education-mediated contribution is computed as $\gamma_1\gamma_2$, the class-mediated contribution as $\theta_1\theta_2$, and the income-mediated contribution as $\delta_1\delta_2$. Results are additionally summarized using component shares—e.g., $\beta_1/\beta_0$ and $(\gamma_1\gamma_2)/\beta_0$—to express each pathway as a proportion of the total association.
+
+In the accompanying implementation, regressions used to estimate decomposition parameters are estimated with CR2 cluster-robust standard errors at the individual level, and uncertainty for derived components (products and shares) is obtained via cluster bootstrap procedures.
+
+
+
+```{r}
+#| label: source2
+#| echo: false
+#| results: false
+#| message: false
+#| warning: false
+#| include: false
+
+load(here("output/decomposition/decomposition_models_all_v2.RData"))
+```
+
+
+```{r}
+#| label: tbl-decomp-base
+#| tbl-cap: "Baseline decomposition of the housing-wealth association: indirect components via education, social class (ISEI), and income"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+boot_base_tbl %>% 
+  select(vardep, component, 
+         share_of_beta0, share_conf.low, share_conf.high) %>% 
+  dplyr::filter(component %in% c("Direct/residual (beta1): W -> Y | E,C,I",
+                                 "Indirect via E: gamma1*gamma2 (educyear)",
+                          "Indirect via C: theta1*theta2 (isei)",
+                          "Indirect via I: delta1*delta2 (ln_inc_eq_real_sqrt)")) %>% 
+  mutate_if(is.numeric, ~ round(., 3)) %>% 
+  mutate(
+    share = paste0(share_of_beta0, " (", share_conf.low, ", ", share_conf.high, ")"),
+    component = case_when(component == "Direct/residual (beta1): W -> Y | E,C,I" ~ "B1",
+      component == "Indirect via E: gamma1*gamma2 (educyear)" ~ "E",
+                          component == "Indirect via C: theta1*theta2 (isei)" ~ "C",
+                          component == "Indirect via I: delta1*delta2 (ln_inc_eq_real_sqrt)" ~ "I"),
+    vardep = case_when(
+      vardep == "identification" ~ "Cultural identification",
+      vardep == "friends" ~"Number of friends",
+      vardep == "size_network"~"Network size",
+      vardep == "gen_trust"~"Generalized trust",
+      vardep == "trust_minorities" ~"Trust in minorities",
+      vardep == "trust_inst"~"Trust in major institutions",
+      vardep == "interest_pol"~"Political engagement",
+      vardep == "satisf_demo"~"Satisfaction with democracy",
+      vardep == "conv_particip"~"Conventional political participation",
+      vardep == "unconv_particip"~"Unconventional political participation",
+      vardep == "egalitarianism"~"Egalitarianism",
+      vardep == "altruistic"~"Altruistic dispositions",
+      vardep == "prosoc_behave"~"Prosocial behavior",
+      vardep == "democracy_support"~"Democracy support",
+      vardep == "justif_violence"~"Justification of violence"
+    ),
+    vardep = factor(vardep,
+                     levels = c(
+                       "Cultural identification",
+                       "Number of friends",
+                       "Network size",
+                       "Generalized trust",
+                       "Trust in minorities",
+                       "Trust in major institutions",
+                       "Political engagement",
+                       "Satisfaction with democracy",
+                       "Conventional political participation",
+                       "Unconventional political participation",
+                       "Egalitarianism",
+                       "Altruistic dispositions",
+                       "Prosocial behavior",
+                       "Democracy support",
+                       "Justification of violence"
+                     )),
+    .before = 3
+  ) %>% 
+  select(1:3) %>% 
+  pivot_wider(
+    id_cols = vardep,
+    names_from = component,
+    values_from = c(share)
+  ) %>% 
+  select(vardep, B1, E, C, I) %>% 
+  kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                    col.names = c("Outcome", 
+                                  "B1 Residual", 
+                                  "E%", 
+                                  "C%", 
+                                  "I%"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, 
+                            font_size = 7) %>%
+  kableExtra::column_spec(1, width = "4cm") %>% 
+  kableExtra::row_spec(0, bold = T) %>% 
+  kableExtra::footnote(
+    general = c(
+      "W = Housing Wealth, E = Education, C = Social Class, I = Household Income.",
+      "Coefficient entries report indirect components (products).",
+      "Shares are computed as component/B0, where B0 is the total association from the unconditional model Y ~ W.",
+      "95% CIs are obtained via cluster bootstrap (999 iterations) resampling individuals and reported in parenthesis.",
+      "Shares may be negative or exceed 1 when components and β0 have opposite signs or when B0 is close to zero."
+    )
+  )
+
+
+```
+
+{{< pagebreak >}}
+
+## Residualized decomposition
+
+The residualized decomposition implements the same decomposition after partialling out wave fixed effects and age, thereby incorporating these adjustments while preserving the tractable three-mediator system. Residualized variables ${Y}, {W}, {E}, {C}, {I}$ are obtained by regressing each variable on wave indicators $\Lambda_t$ and age $A$ and retaining the residuals; for example:
+
+$$
+Y = a_Y + \Lambda_t + \phi A + e_Y \quad \Rightarrow \quad {Y} = e_Y
+$$
+
+with analogous residualization for $W$ and each mediator. The baseline system is then estimated using residualized quantities:
+
+$$
+{Y} = {\alpha}_0 + {\beta}_0 {W} + {u}_0
+$$
+
+
+$$
+{Y} = {\alpha}_1 + {\beta}_1 {W} + {\gamma}_1 {E} + {\theta}_1 {C} + {\delta}_1 {I}+ {u}_1
+$$
+
+$$
+\begin{aligned}
+{E} = {\alpha}_E + {\gamma}_2 {W} + {u}_E \\
+{C} = {\alpha}_C + {\theta}_2 {W} + {u}_C \\
+{I} = {\alpha}_I + {\delta}_2 {W} + {u}_I 
+\end{aligned}
+$$
+
+The decomposition identity is preserved on the residual scale:
+
+$$
+{\beta}_0 = {\beta}_1 + ({\gamma}_1{\gamma}_2) + ({\theta}_1{\theta}_2) + ({\delta}_1{\delta}_2)
+$$
+
+so components are interpreted as associations between housing wealth and social cohesion after removing variation attributable to age and wave membership. In the accompanying implementation, regressions used to estimate decomposition parameters are estimated with CR2 cluster-robust standard errors at the individual level, and uncertainty for derived components (products and shares) is obtained via cluster bootstrap procedures.
+
+```{r}
+#| label: tbl-decomp-resid
+#| tbl-cap: "Residualized decomposition of the housing-wealth association: indirect components via education, social class (ISEI), and income"
+#| tbl-cap-location: top
+#| inlcude: false
+#| echo: false
+#| results: asis
+
+boot_resid_tbl %>% 
+  select(vardep, component, 
+         share_of_beta0, share_conf.low, share_conf.high) %>% 
+  dplyr::filter(component %in% c("Direct/residual (beta1): W -> Y | E,C,I (net of age + wave FE)", "Indirect via E: gamma1*gamma2 (educyear)",
+                          "Indirect via C: theta1*theta2 (isei)",
+                          "Indirect via I: delta1*delta2 (ln_inc_eq_real_sqrt)")) %>% 
+  mutate_if(is.numeric, ~ round(., 3)) %>% 
+  mutate(
+    share = paste0(share_of_beta0, " (", share_conf.low, ", ", share_conf.high, ")"),
+    component = case_when(component == "Direct/residual (beta1): W -> Y | E,C,I (net of age + wave FE)" ~ "B1",
+                          component == "Indirect via E: gamma1*gamma2 (educyear)" ~ "E",
+                          component == "Indirect via C: theta1*theta2 (isei)" ~ "C",
+                          component == "Indirect via I: delta1*delta2 (ln_inc_eq_real_sqrt)" ~ "I"),
+    vardep = case_when(
+      vardep == "identification" ~ "Cultural identification",
+      vardep == "friends" ~"Number of friends",
+      vardep == "size_network"~"Network size",
+      vardep == "gen_trust"~"Generalized trust",
+      vardep == "trust_minorities" ~"Trust in minorities",
+      vardep == "trust_inst"~"Trust in major institutions",
+      vardep == "interest_pol"~"Political engagement",
+      vardep == "satisf_demo"~"Satisfaction with democracy",
+      vardep == "conv_particip"~"Conventional political participation",
+      vardep == "unconv_particip"~"Unconventional political participation",
+      vardep == "egalitarianism"~"Egalitarianism",
+      vardep == "altruistic"~"Altruistic dispositions",
+      vardep == "prosoc_behave"~"Prosocial behavior",
+      vardep == "democracy_support"~"Democracy support",
+      vardep == "justif_violence"~"Justification of violence"
+    ),
+    vardep = factor(vardep,
+                     levels = c(
+                       "Cultural identification",
+                       "Number of friends",
+                       "Network size",
+                       "Generalized trust",
+                       "Trust in minorities",
+                       "Trust in major institutions",
+                       "Political engagement",
+                       "Satisfaction with democracy",
+                       "Conventional political participation",
+                       "Unconventional political participation",
+                       "Egalitarianism",
+                       "Altruistic dispositions",
+                       "Prosocial behavior",
+                       "Democracy support",
+                       "Justification of violence"
+                     )),
+    .before = 3
+  ) %>% 
+  select(1:3) %>% 
+  pivot_wider(
+    id_cols = vardep,
+    names_from = component,
+    values_from = c(share)
+  ) %>% 
+  select(vardep, B1, E, C, I) %>% 
+  kableExtra::kable(format = "latex", 
+                    booktabs= T,
+                    align = 'c',
+                 col.names = c("Outcome", 
+                                  "B1 Residual", 
+                                  "E%", 
+                                  "C%", 
+                                  "I%"),
+                    caption = NULL) %>%
+  kableExtra::kable_styling(latex_options = "hold_position", 
+                            bootstrap_options = "striped",
+                            full_width = T, font_size = 7) %>%
+  kableExtra::column_spec(1, width = "4cm") %>% 
+  kableExtra::row_spec(0, bold = T) %>% 
+kableExtra::footnote(
+  general = c(
+    "W = Housing Wealth, E = Education, C = Social Class, I = Household Income.",
+    "All variables are residualized with respect to wave fixed effects and age prior to estimation (i.e., net of wave and age).",
+    "Coefficient entries report indirect components (products) estimated on residualized variables.",
+    "Shares are computed as component/B0, where β0 is the total association from the unconditional residualized model (Y ~ W).",
+    "95% CIs are obtained via cluster bootstrap (999 iterations) resampling individuals and reported in parentheses.",
+    "Shares may be negative or exceed 1 when components and β0 have opposite signs or when B0 is close to zero."
+  )
+)
+```
+
+{{< pagebreak >}}
+
+# Interactions: Social cohesion and housing-wealth extremes (top-quintile land-price exposure) by homeownership
+
+We next assess whether the association between residing in a top housing-wealth context—defined as living in a zone within the top quintile (top 20%) of land price per square meter—and social-cohesion outcomes varies by homeownership status. To this end, we estimate models on a restricted panel of homeowners, distinguishing between respondents who own their dwelling outright and those who own with an outstanding mortgage.
+
+
+Formally, the model is:
+
+$$
+\begin{aligned}
+Y_{it} &=
+\sum_{g=1}^{4}\alpha_g\,H_{git}
+\;+\;
+\sum_{g=1}^{4}\beta_g\Big(\text{Top Quintile Price}_{it}\times H_{git}\Big)
+\;+\;
+\gamma_1\,\text{Education}_{it}
+\;+\;
+\gamma_2\,\text{Class}_{it}
+\;+\;
+\gamma_3\,\text{Income}_{it} \\
+&\quad + \delta\,\text{Age}_{it}
+\;+\;
+\lambda_t
+\;+\;
+\varepsilon_{it}
+\end{aligned}
+$$ {#eq-for}
+
+where $H_{git}$ is a dummy indicating whether individual $i$ in wave $t$ belongs to homeownership category $g \in \{1,2,3,4\}$. The coefficients $\beta_g$ represent the top-quintile housing wealth (top 20% 10 vs. all others) gradient within each homeownership category (i.e., group-specific slopes), and there is no global $\beta_1$ term for $\text{Top top 10 decile Price}_{it}$ outside these interactions; $\beta_{2}$, $\beta_{3}$, and $\beta_{4}$ capture the associations of years of education, the International Socio-Economic Index of Occupational Status (ISEI), and the log equivalised household income respectively; and $\beta_{6}$ captures the interaction between top-quintile housing wealth and homeownership status, indicating whether the top 20% of housing wealth effect differs across ownership groups. $\lambda_{t}$ denotes wave fixed effects, $\delta_{it}$ denotes individual's age, and $\varepsilon_{it}$ is the idiosyncratic error term. Standard errors are clustered at the respondent level (`idencuesta`) using the CR2 correction.
+
+Below, we present the results of the estimates using plots of predicted values grouped by indicators belonging to the cultural, relational, political, and normative dimensions of social cohesion. Complete tables can be found in Supplementary Material.
+
+## Cultural dimension
+
+```{r}
+#| fig-cap: "Cultural identification by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$identification
+
+```
+
+
+## Relational dimension
+
+```{r}
+#| fig-cap: "Number of friends by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$friends
+```
+
+```{r}
+#| fig-cap: "Network size by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$size_network
+```
+
+```{r}
+#| fig-cap: "Generalized trust by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$gen_trust
+```
+
+```{r}
+#| fig-cap: "Trust in minorities by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$trust_minorities
+```
+
+```{r}
+#| fig-cap: "Trust in major institutions by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$trust_inst
+```
+
+
+## Political dimension
+
+```{r}
+#| fig-cap: "Political engagement by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$interest_pol
+```
+
+```{r}
+#| fig-cap: "Satisfaction with democracy by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$satisf_demo
+```
+
+```{r}
+#| fig-cap: "Conventional political participation by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$conv_particip
+```
+
+
+```{r}
+#| fig-cap: "Unconventional political participation by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$unconv_particip
+```
+
+
+```{r}
+#| fig-cap: "Egalitarianism by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$egalitarianism
+```
+
+
+```{r}
+#| fig-cap: "Altruistic dispositions by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$altruistic
+```
+
+
+```{r}
+#| fig-cap: "Prosocial behavior by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$prosoc_behave
+```
+
+## Normative dimension
+
+```{r}
+#| fig-cap: "Democracy support by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$democracy_support
+```
+
+```{r}
+#| fig-cap: "Justification of violence by top 20% housing wealth and homeownership (controls: education, social class, equivalised income, age)"
+#| fig-cap-location: bottom
+#| echo: false
+#| results: asis
+
+plots_m6$justif_violence
+```
+
+
+# References
+
+::: {#refs}
+:::
+::::
+
+
+

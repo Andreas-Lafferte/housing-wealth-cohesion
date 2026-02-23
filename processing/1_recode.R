@@ -15,7 +15,7 @@ elsoc_long_2016_2023 <- elsoc_long_2016_2023 %>%
     across(everything(), ~ remove_value_labels(., c(-666, -777, -888, -999))) # ! DROPS LABELS FROM SPECIAL VALUES
   )
 
-# 1.1 Select -----------------------------------------------------------
+# 1.1 Select and filter -----------------------------------------------------------
 
 db <- elsoc_long_2016_2023 %>% 
   select(idencuesta, 
@@ -64,6 +64,14 @@ db <- elsoc_long_2016_2023 %>%
          m30b, 
          m29) %>% 
   as_tibble() 
+
+
+#  Filter to Santiago region -------------------------------------------
+
+db <- db %>% 
+  filter(region_cod == 13)
+
+# filter: removed 5,197 rows (63%), 3,077 rows remaining
 
 # 1.3 Recode -----------------------------------------------------------
 

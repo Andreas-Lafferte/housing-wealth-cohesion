@@ -861,7 +861,7 @@ df_decile <- imap_dfr(models_principal, \(mods, dv) {
 df_decile$high_lab <- if_else(df_decile$p.value < 0.05, TRUE, FALSE)
 
 df_decile <- df_decile %>% 
-  mutate(termino = paste0("D10 housing wealth ", model),
+  mutate(termino = model,
          outcome = case_when(
            outcome == "identification" ~ "Cultural identification",
            outcome == "friends" ~"Number of friends",
@@ -1156,25 +1156,276 @@ names(plots_m6) <- dv_names
 ## Formula: DV ~ dummy_decile_uf2018*cluster + wave FE + age + controls (CR2 SE) 
 ## Sample: only 1 y 2 in housing owners, drop other
 
-res_interactions_cluster <- map(varsdep, ~ estimate_lm_robust_interact_decile_cluster(
-  vardep = .x, 
-  cluster_c = "cluster_c",                 
-  pred_decile = "dummy_decile_uf2018", 
-  wave = "ola",                        
-  age = "age",
-  cluster = "idencuesta",
-  controls = c("educyear", "isei", "ln_inc_eq_real_sqrt"),
-  datos = subset(df_study1, housing %in% c("Owned and fully paid-off home", "Owned home with mortgage payments")))) %>% 
+#res_interactions_cluster <- map(varsdep, ~ estimate_lm_robust_interact_decile_cluster(
+#  vardep = .x, 
+#  cluster_c = "cluster_c",                 
+#  pred_decile = "dummy_decile_uf2018", 
+#  wave = "ola",                        
+#  age = "age",
+#  cluster = "idencuesta",
+#  controls = c("educyear", "isei", "ln_inc_eq_real_sqrt"),
+#  datos = subset(df_study1, housing %in% c("Owned and fully paid-off home", "Owned home with mortgage payments")))) %>% 
+#  set_names(varsdep)
+#
+#table(df_study1$cluster_c, df_study1$dummy_decile_uf2018)
+#
+#models_int_clusters <- map(res_interactions_cluster, "set_decile")
+
+
+## 5.4 New set of regression models: Social cohesion and housing-wealth extremes --------------
+## Formula: DV ~ dummy_quintile_uf2018 + wave FE + age + controls (CR2 SE) 
+## Sample: only 1 and 2 in housing (owners)
+
+models_quintile <- map(varsdep, ~ estimate_lm_robust(.x, 
+                                                      pred1="dummy_quintile_uf2018", 
+                                                      pred2="ola",
+                                                      pred3 ="age",
+                                                      controls=c("educyear", "isei", "ln_inc_eq_real_sqrt"),  
+                                                      datos=subset(df_study1, housing %in% c("Owned and fully paid-off home", "Owned home with mortgage payments")))) %>% 
   set_names(varsdep)
 
-table(df_study1$cluster_c, df_study1$dummy_decile_uf2018)
 
-models_int_clusters <- map(res_interactions_cluster, "set_decile")
+# plot
+
+df_dummy_quintile <- imap_dfr(models_quintile, ~{
+  broom::tidy(.x[[5]], conf.int = TRUE) %>%
+    filter(term != "(Intercept)") %>%
+    mutate(outcome = .y)
+}) %>% 
+  filter(term %in% c("dummy_quintile_uf2018", "educyear", "isei", "ln_inc_eq_real_sqrt"))
+
+df_dummy_quintile$high_lab <- if_else(df_dummy$p.value < 0.05, TRUE, FALSE)
+
+df_dummy_quintile <- df_dummy_quintile %>% 
+  mutate(term = case_when(term == "dummy_quintile_uf2018" ~ "Top 20% housing wealth",
+                          term == "educyear" ~ "Education",
+                          term == "isei" ~ "ISEI",
+                          term == "ln_inc_eq_real_sqrt" ~ "Log equivalised household income"),
+         term = factor(term, 
+                       levels = c("Top 20% housing wealth", 
+                                  "Education", 
+                                  "ISEI", 
+                                  "Log equivalised household income")),
+         outcome = case_when(
+           outcome == "identification" ~ "Cultural identification",
+           outcome == "friends" ~"Number of friends",
+           outcome == "size_network"~"Network size",
+           outcome == "gen_trust"~"Generalized trust",
+           outcome == "trust_minorities" ~"Trust in minorities",
+           outcome == "trust_inst"~"Trust in major institutions",
+           outcome == "interest_pol"~"Political engagement",
+           outcome == "satisf_demo"~"Satisfaction with democracy",
+           outcome == "conv_particip"~"Conventional political participation",
+           outcome == "unconv_particip"~"Unconventional political participation",
+           outcome == "egalitarianism"~"Egalitarianism",
+           outcome == "altruistic"~"Altruistic dispositions",
+           outcome == "prosoc_behave"~"Prosocial behavior",
+           outcome == "democracy_support"~"Democracy support",
+           outcome == "justif_violence"~"Justification of violence"
+         ),
+         outcome = factor(outcome,
+                          levels = c(
+                            "Cultural identification",
+                            "Number of friends",
+                            "Network size",
+                            "Generalized trust",
+                            "Trust in minorities",
+                            "Trust in major institutions",
+                            "Political engagement",
+                            "Satisfaction with democracy",
+                            "Conventional political participation",
+                            "Unconventional political participation",
+                            "Egalitarianism",
+                            "Altruistic dispositions",
+                            "Prosocial behavior",
+                            "Democracy support",
+                            "Justification of violence"
+                          )))
+
+gdummy_quintile <- df_dummy_quintile %>% 
+  ggplot(aes(x = estimate, y = term, group = outcome)) +
+  geom_vline(xintercept = 0, linewidth = 0.7, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), fatten = 1.5, 
+                  size = 1, color = "#000004FF") +
+  geom_pointrange(
+    data = df_dummy_quintile %>% filter(high_lab),
+    aes(xmin = conf.low, xmax = conf.high),
+    fatten = 1.5, size = 1, color = "#ca1137"
+  ) +
+  facet_wrap(~ outcome, scales = "fixed") +
+  labs(x = "Estimate",
+       y = NULL,
+       caption = "Source: own elaboration with pooled data from ELSOC 2016-2019 (N obs. = 1391, N clusters = 548)\nConfidence intervals (IC) at 95%\nEstimates in red are p<0.05")
+
+# plot changes in coef
+
+k_models <- 2:5
+k_labels <- paste0("M", seq_along(k_models))  # M1..M4
+
+df_quintile <- imap_dfr(models_quintile, \(mods, dv) {
+  map_dfr(k_models, \(k) {
+    tidy(mods[[k]], conf.int = TRUE) %>%
+      filter(term == "dummy_quintile_uf2018") %>%
+      mutate(
+        outcome = dv,
+        model = factor(paste0("M", match(k, k_models)), levels = k_labels)
+      )
+  })
+})
+
+df_quintile$high_lab <- if_else(df_quintile$p.value < 0.05, TRUE, FALSE)
+
+df_quintile <- df_quintile %>% 
+  mutate(termino = model,
+         outcome = case_when(
+           outcome == "identification" ~ "Cultural identification",
+           outcome == "friends" ~"Number of friends",
+           outcome == "size_network"~"Network size",
+           outcome == "gen_trust"~"Generalized trust",
+           outcome == "trust_minorities" ~"Trust in minorities",
+           outcome == "trust_inst"~"Trust in major institutions",
+           outcome == "interest_pol"~"Political engagement",
+           outcome == "satisf_demo"~"Satisfaction with democracy",
+           outcome == "conv_particip"~"Conventional political participation",
+           outcome == "unconv_particip"~"Unconventional political participation",
+           outcome == "egalitarianism"~"Egalitarianism",
+           outcome == "altruistic"~"Altruistic dispositions",
+           outcome == "prosoc_behave"~"Prosocial behavior",
+           outcome == "democracy_support"~"Democracy support",
+           outcome == "justif_violence"~"Justification of violence"
+         ),
+         outcome = factor(outcome,
+                          levels = c(
+                            "Cultural identification",
+                            "Number of friends",
+                            "Network size",
+                            "Generalized trust",
+                            "Trust in minorities",
+                            "Trust in major institutions",
+                            "Political engagement",
+                            "Satisfaction with democracy",
+                            "Conventional political participation",
+                            "Unconventional political participation",
+                            "Egalitarianism",
+                            "Altruistic dispositions",
+                            "Prosocial behavior",
+                            "Democracy support",
+                            "Justification of violence"
+                          )))
+
+# All
+
+g_quintile_controls <- df_quintile %>% 
+  ggplot(aes(x = estimate, y = termino, group = outcome)) +
+  geom_vline(xintercept = 0, linewidth = 0.7, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), fatten = 1.5, 
+                  size = 1, color = "#000004FF") +
+  geom_pointrange(
+    data = df_quintile %>% filter(high_lab),
+    aes(xmin = conf.low, xmax = conf.high),
+    fatten = 1.5, size = 1, color = "#ca1137"
+  ) +
+  facet_wrap(~ outcome, scales = "fixed") +
+  labs(x = "Estimate",
+       y = NULL,
+       caption = "Source: authors’ elaboration using pooled ELSOC data (2016–2019; N = 1,391 person-waves; 548 respondents)\nError bars show 95% confidence intervals\nEstimates highlighted in red are statistically significant (p < .05)\nM1 includes the top-decile housing-wealth indicator plus wave fixed effects and age; M2 additionally adjusts for education; M3 adds social class; and M4 further adds equivalized household income")
+
+
+# Cultural
+g_cultural_quintile <- df_quintile %>% 
+  filter(outcome == "Cultural identification") %>% 
+  ggplot(aes(x = estimate, y = termino)) +
+  geom_vline(xintercept = 0, linewidth = 0.7, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), fatten = 1.5, 
+                  size = 1, color = "#000004FF") +
+  geom_pointrange(
+    data = df_quintile %>% filter(high_lab & outcome == "Cultural identification"),
+    aes(xmin = conf.low, xmax = conf.high),
+    fatten = 1.5, size = 1, color = "#ca1137"
+  ) +
+  labs(x = "Estimate",
+       y = NULL,
+       caption = "Source: authors’ elaboration using pooled ELSOC data (2016–2019; N = 1,391 person-waves; 548 respondents)\nError bars show 95% confidence intervals\nEstimates highlighted in red are statistically significant (p < .05)\nM1 includes the top-decile housing-wealth indicator plus wave fixed effects and age; M2 additionally adjusts for education; M3 adds social class; and M4 further adds equivalized household income")
+
+
+# Relational
+g_relational_quintile <- df_quintile %>% 
+  filter(outcome %in% c("Number of friends",
+                        "Network size",
+                        "Generalized trust",
+                        "Trust in minorities",
+                        "Trust in major institutions")) %>% 
+  ggplot(aes(x = estimate, y = termino, group = outcome)) +
+  geom_vline(xintercept = 0, linewidth = 0.7, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), fatten = 1.5, 
+                  size = 1, color = "#000004FF") +
+  geom_pointrange(
+    data = df_quintile %>% filter(high_lab & outcome %in% c("Number of friends",
+                                                            "Network size",
+                                                            "Generalized trust",
+                                                            "Trust in minorities",
+                                                            "Trust in major institutions")),
+    aes(xmin = conf.low, xmax = conf.high),
+    fatten = 1.5, size = 1, color = "#ca1137"
+  ) +
+  facet_wrap(~ outcome, scales = "fixed") +
+  labs(x = "Estimate",
+       y = NULL,
+       caption = "Source: authors’ elaboration using pooled ELSOC data (2016–2019; N = 1,391 person-waves; 548 respondents)\nError bars show 95% confidence intervals\nEstimates highlighted in red are statistically significant (p < .05)\nM1 includes the top-decile housing-wealth indicator plus wave fixed effects and age; M2 additionally adjusts for education; M3 adds social class; and M4 further adds equivalized household income")
+
+# Political
+g_political_quintile <- df_quintile %>% 
+  filter(outcome %in% c( "Political engagement",
+                         "Satisfaction with democracy",
+                         "Conventional political participation",
+                         "Unconventional political participation",
+                         "Egalitarianism",
+                         "Altruistic dispositions",
+                         "Prosocial behavior")) %>% 
+  ggplot(aes(x = estimate, y = termino, group = outcome)) +
+  geom_vline(xintercept = 0, linewidth = 0.7, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), fatten = 1.5, 
+                  size = 1, color = "#000004FF") +
+  geom_pointrange(
+    data = df_quintile %>% filter(high_lab & outcome %in% c( "Political engagement",
+                                                             "Satisfaction with democracy",
+                                                             "Conventional political participation",
+                                                             "Unconventional political participation",
+                                                             "Egalitarianism",
+                                                             "Altruistic dispositions",
+                                                             "Prosocial behavior")),
+    aes(xmin = conf.low, xmax = conf.high),
+    fatten = 1.5, size = 1, color = "#ca1137"
+  ) +
+  facet_wrap(~ outcome, scales = "fixed") +
+  labs(x = "Estimate",
+       y = NULL,
+       caption = "Source: authors’ elaboration using pooled ELSOC data (2016–2019; N = 1,391 person-waves; 548 respondents)\nError bars show 95% confidence intervals\nEstimates highlighted in red are statistically significant (p < .05)\nM1 includes the top-decile housing-wealth indicator plus wave fixed effects and age; M2 additionally adjusts for education; M3 adds social class; and M4 further adds equivalized household income")
+
+# Normative
+
+g_normative_quintile <- df_quintile %>% 
+  filter(outcome %in% c("Democracy support",
+                        "Justification of violence")) %>% 
+  ggplot(aes(x = estimate, y = termino, group = outcome)) +
+  geom_vline(xintercept = 0, linewidth = 0.7, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), fatten = 1.5, 
+                  size = 1, color = "#000004FF") +
+  geom_pointrange(
+    data = df_quintile %>% filter(high_lab & outcome %in% c("Democracy support",
+                                                            "Justification of violence")),
+    aes(xmin = conf.low, xmax = conf.high),
+    fatten = 1.5, size = 1, color = "#ca1137"
+  ) +
+  facet_wrap(~ outcome, scales = "fixed") +
+  labs(x = "Estimate",
+       y = NULL,
+       caption = "Source: authors’ elaboration using pooled ELSOC data (2016–2019; N = 1,391 person-waves; 548 respondents)\nError bars show 95% confidence intervals\nEstimates highlighted in red are statistically significant (p < .05)\nM1 includes the top-decile housing-wealth indicator plus wave fixed effects and age; M2 additionally adjusts for education; M3 adds social class; and M4 further adds equivalized household income")
 
 # 6. Save models ----------------------------------------------------------
 
 save(models_principal, 
      models_secondary, 
+     models_quintile,
      models_int_lnprice, 
-     models_int_dummy10, 
-     models_int_clusters, file = here("output/models/pooled_ols_models_V3.RData"))
+     models_int_dummy10, file = here("output/models/pooled_ols_models_V3.RData"))

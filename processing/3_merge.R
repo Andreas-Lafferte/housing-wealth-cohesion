@@ -49,7 +49,8 @@ precios_suelo <- precios_suelo %>%
          uf2018) %>% 
   mutate(comuna = as.character(comuna),
          geocodg = as.character(geocodg),
-         decile_uf2018 = ntile(uf2018, 10))
+         decile_uf2018 = ntile(uf2018, 10),
+         quintile_uf2018 = ntile(uf2018, 5))
 
 geo_merge <- inner_join(geo_elsoc, 
                        precios_suelo,
